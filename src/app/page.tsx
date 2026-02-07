@@ -648,7 +648,7 @@ export default function TagQuest() {
               </div>
             </div>
 
-            <h2 className="text-2xl font-bold mb-3">{currentQuestion.text}</h2>
+            <h2 className="text-2xl font-bold mb-3 text-black">{currentQuestion.text}</h2>
             <p className="text-gray-600 mb-2">{currentQuestion.context}</p>
             <p className="text-blue-600 text-sm mb-2">{currentQuestion.impact}</p>
 

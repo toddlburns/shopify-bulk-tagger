@@ -290,34 +290,17 @@ export default function TagQuest() {
       }
     }
 
-    // Upload in chunks to show real progress
-    const chunkSize = 2000;
-    const totalChunks = Math.ceil(newProducts.length / chunkSize);
+    setUploadProgress({ stage: `Uploading ${newProducts.length.toLocaleString()} products...`, current: 50, total: 100 });
 
-    // First, clear existing catalog
-    setUploadProgress({ stage: 'Preparing catalog...', current: 0, total: totalChunks + 1 });
-    await fetch('/api/products', { method: 'DELETE' });
+    const res = await fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ products: newProducts })
+    });
+    const result = await res.json();
 
-    // Upload chunks
-    for (let i = 0; i < newProducts.length; i += chunkSize) {
-      const chunkNum = Math.floor(i / chunkSize) + 1;
-      const chunk = newProducts.slice(i, i + chunkSize);
-
-      setUploadProgress({
-        stage: `Uploading ${Math.min(i + chunkSize, newProducts.length).toLocaleString()} of ${newProducts.length.toLocaleString()}...`,
-        current: chunkNum,
-        total: totalChunks + 1
-      });
-
-      await fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ products: chunk, append: true })
-      });
-    }
-
-    setUploadProgress({ stage: 'Done!', current: totalChunks + 1, total: totalChunks + 1 });
-    setCatalogCount(newProducts.length);
+    setUploadProgress({ stage: 'Done!', current: 100, total: 100 });
+    setCatalogCount(result.total || newProducts.length);
 
     setTimeout(() => {
       setUploadingCatalog(false);

@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Session {
+  id            String   @id @default(cuid())
+  name          String   @default("Default Session")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  rules         Rule[]
+  answers       Answer[]
+  certainties   Certainty[]
+}
+
+model Rule {
+  id            String   @id @default(cuid())
+  sessionId     String
+  session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  type          String   // vendor-genre, vendor-decade
+  vendor        String
+  tagType       String   // genre, decade
+  value         String
+  certaintyPct  Int
+  reason        String?
+
+  createdAt     DateTime @default(now())
+}
+
+model Answer {
+  id            String   @id @default(cuid())
+  sessionId     String
+  session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  questionId    String
+  questionText  String
+  answer        String
+
+  createdAt     DateTime @default(now())
+}
+
+model Certainty {
+  id            String   @id @default(cuid())
+  sessionId     String
+  session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  handle        String
+  tagType       String   // genre, subgenre, decade
+  value         String
+  pct           Int
+  source        String   // existing, rule
+
+  @@unique([sessionId, handle, tagType])
+}

@@ -201,17 +201,34 @@ export default function TagQuest() {
       }
     }
 
-    setUploadProgress({ stage: `Uploading ${newProducts.length.toLocaleString()} products...`, current: 0, total: 100 });
+    // Upload in chunks to show real progress
+    const chunkSize = 2000;
+    const totalChunks = Math.ceil(newProducts.length / chunkSize);
 
-    const res = await fetch('/api/products', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ products: newProducts })
-    });
-    const result = await res.json();
+    // First, clear existing catalog
+    setUploadProgress({ stage: 'Preparing catalog...', current: 0, total: totalChunks + 1 });
+    await fetch('/api/products', { method: 'DELETE' });
 
-    setUploadProgress({ stage: 'Done!', current: 100, total: 100 });
-    setCatalogCount(result.total);
+    // Upload chunks
+    for (let i = 0; i < newProducts.length; i += chunkSize) {
+      const chunkNum = Math.floor(i / chunkSize) + 1;
+      const chunk = newProducts.slice(i, i + chunkSize);
+
+      setUploadProgress({
+        stage: `Uploading ${Math.min(i + chunkSize, newProducts.length).toLocaleString()} of ${newProducts.length.toLocaleString()}...`,
+        current: chunkNum,
+        total: totalChunks + 1
+      });
+
+      await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products: chunk, append: true })
+      });
+    }
+
+    setUploadProgress({ stage: 'Done!', current: totalChunks + 1, total: totalChunks + 1 });
+    setCatalogCount(newProducts.length);
 
     setTimeout(() => {
       setUploadingCatalog(false);
@@ -864,24 +881,25 @@ export default function TagQuest() {
                 </label>
               ) : (
                 <div className="bg-gray-100 rounded-xl p-4">
-                  <div className="text-gray-800 font-medium text-center mb-3">
-                    {uploadProgress.stage}
+                  <div className="text-gray-800 font-medium text-center mb-3 flex items-center justify-center gap-2">
+                    <span className="inline-block w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"></span>
+                    {uploadProgress.stage || 'Starting...'}
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                  <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
                     <div
-                      className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 transition-all duration-300"
+                      className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 transition-all duration-500 ease-out"
                       style={{
                         width: uploadProgress.total > 0
                           ? `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%`
-                          : '0%'
+                          : '5%'
                       }}
                     />
                   </div>
-                  {uploadProgress.total > 0 && uploadProgress.stage.includes('Uploading') && (
-                    <div className="text-gray-500 text-sm text-center mt-2">
-                      This may take a moment for large catalogs...
-                    </div>
-                  )}
+                  <div className="text-gray-500 text-sm text-center mt-2">
+                    {uploadProgress.total > 0
+                      ? `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}% complete`
+                      : 'Preparing...'}
+                  </div>
                 </div>
               )}
 

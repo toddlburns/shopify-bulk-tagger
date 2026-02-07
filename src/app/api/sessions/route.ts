@@ -7,7 +7,7 @@ export async function GET() {
     orderBy: { updatedAt: 'desc' },
     include: {
       _count: {
-        select: { rules: true, answers: true }
+        select: { rules: true, answers: true, products: true }
       }
     }
   });

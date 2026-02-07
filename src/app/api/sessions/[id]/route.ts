@@ -13,7 +13,8 @@ export async function GET(
     include: {
       rules: true,
       answers: true,
-      certainties: true
+      certainties: true,
+      products: true
     }
   });
 
@@ -38,9 +39,33 @@ export async function PUT(
     data: { updatedAt: new Date() }
   });
 
+  // If products provided, save them (only on first load)
+  if (body.products && Array.isArray(body.products) && body.products.length > 0) {
+    // Check if products already exist
+    const existingCount = await prisma.product.count({ where: { sessionId: id } });
+
+    if (existingCount === 0) {
+      // Batch insert products in chunks to avoid timeout
+      const chunkSize = 500;
+      for (let i = 0; i < body.products.length; i += chunkSize) {
+        const chunk = body.products.slice(i, i + chunkSize);
+        await prisma.product.createMany({
+          data: chunk.map((p: { handle: string; title: string; vendor: string; existingGenre?: string; existingSubgenre?: string; existingDecade?: string }) => ({
+            sessionId: id,
+            handle: p.handle,
+            title: p.title,
+            vendor: p.vendor,
+            existingGenre: p.existingGenre || null,
+            existingSubgenre: p.existingSubgenre || null,
+            existingDecade: p.existingDecade || null
+          }))
+        });
+      }
+    }
+  }
+
   // If rules provided, upsert them
   if (body.rules && Array.isArray(body.rules)) {
-    // Delete existing rules and recreate
     await prisma.rule.deleteMany({ where: { sessionId: id } });
 
     if (body.rules.length > 0) {
@@ -79,16 +104,21 @@ export async function PUT(
     await prisma.certainty.deleteMany({ where: { sessionId: id } });
 
     if (body.certainties.length > 0) {
-      await prisma.certainty.createMany({
-        data: body.certainties.map((c: { handle: string; tagType: string; value: string; pct: number; source: string }) => ({
-          sessionId: id,
-          handle: c.handle,
-          tagType: c.tagType,
-          value: c.value,
-          pct: c.pct,
-          source: c.source
-        }))
-      });
+      // Batch insert certainties
+      const chunkSize = 500;
+      for (let i = 0; i < body.certainties.length; i += chunkSize) {
+        const chunk = body.certainties.slice(i, i + chunkSize);
+        await prisma.certainty.createMany({
+          data: chunk.map((c: { handle: string; tagType: string; value: string; pct: number; source: string }) => ({
+            sessionId: id,
+            handle: c.handle,
+            tagType: c.tagType,
+            value: c.value,
+            pct: c.pct,
+            source: c.source
+          }))
+        });
+      }
     }
   }
 

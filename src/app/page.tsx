@@ -60,7 +60,7 @@ interface Session {
   id: string;
   name: string;
   updatedAt: string;
-  _count?: { rules: number; answers: number };
+  _count?: { rules: number; answers: number; products: number };
   rules?: Rule[];
   answers?: Answer[];
   certainties?: Array<{
@@ -70,6 +70,7 @@ interface Session {
     pct: number;
     source: string;
   }>;
+  products?: Product[];
 }
 
 export default function TagQuest() {
@@ -327,6 +328,32 @@ export default function TagQuest() {
       };
     }
     setCertainty(certMap);
+
+    // Load products from session if they exist
+    if (session.products && session.products.length > 0) {
+      const loadedProducts = session.products;
+      const loadedVendors: Record<string, VendorData> = {};
+
+      for (const product of loadedProducts) {
+        if (!loadedVendors[product.vendor]) {
+          loadedVendors[product.vendor] = { products: [], existingGenres: {}, existingDecades: {} };
+        }
+        loadedVendors[product.vendor].products.push(product);
+
+        if (product.existingGenre) {
+          loadedVendors[product.vendor].existingGenres[product.existingGenre] =
+            (loadedVendors[product.vendor].existingGenres[product.existingGenre] || 0) + 1;
+        }
+        if (product.existingDecade) {
+          loadedVendors[product.vendor].existingDecades[product.existingDecade] =
+            (loadedVendors[product.vendor].existingDecades[product.existingDecade] || 0) + 1;
+        }
+      }
+
+      setProducts(loadedProducts);
+      setVendors(loadedVendors);
+    }
+
     setShowSessionPicker(false);
   };
 
@@ -364,7 +391,15 @@ export default function TagQuest() {
       body: JSON.stringify({
         rules,
         answers: questionHistory,
-        certainties: certArray
+        certainties: certArray,
+        products: products.map(p => ({
+          handle: p.handle,
+          title: p.title,
+          vendor: p.vendor,
+          existingGenre: p.existingGenre,
+          existingSubgenre: p.existingSubgenre,
+          existingDecade: p.existingDecade
+        }))
       })
     });
 
@@ -474,7 +509,7 @@ export default function TagQuest() {
                   >
                     <div className="font-semibold text-gray-800">{s.name}</div>
                     <div className="text-xs text-gray-500">
-                      {s._count?.answers || 0} answered • {new Date(s.updatedAt).toLocaleDateString()}
+                      {s._count?.answers || 0} answered • {s._count?.products || 0} products • {new Date(s.updatedAt).toLocaleDateString()}
                     </div>
                   </button>
                 ))}

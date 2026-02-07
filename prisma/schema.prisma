@@ -17,6 +17,7 @@ model Session {
   rules         Rule[]
   answers       Answer[]
   certainties   Certainty[]
+  products      Product[]
 }
 
 model Rule {
@@ -58,4 +59,19 @@ model Certainty {
   source        String
 
   @@unique([sessionId, handle, tagType])
+}
+
+model Product {
+  id              String   @id @default(cuid())
+  sessionId       String
+  session         Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  handle          String
+  title           String
+  vendor          String
+  existingGenre   String?
+  existingSubgenre String?
+  existingDecade  String?
+
+  @@unique([sessionId, handle])
 }

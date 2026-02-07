@@ -89,7 +89,6 @@ export default function TagQuest() {
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Load sessions on mount
   useEffect(() => {
     fetch('/api/sessions')
       .then(res => res.json())
@@ -97,7 +96,6 @@ export default function TagQuest() {
       .catch(console.error);
   }, []);
 
-  // Generate questions when products change
   const generateQuestions = useCallback(() => {
     const newQuestions: Question[] = [];
 
@@ -121,8 +119,8 @@ export default function TagQuest() {
             newQuestions.push({
               id: `vendor-genre-${vendor}`,
               text: `Should all "${vendor}" products be "${topGenre[0]}"?`,
-              context: `${topGenre[1]} of ${total} products already have this tag.`,
-              impact: `Would tag ${missingGenre} more products`,
+              context: `${topGenre[1]} of ${total} already tagged`,
+              impact: `+${missingGenre} products`,
               affectedCount: missingGenre,
               type: 'vendor-genre',
               vendor: vendor,
@@ -147,8 +145,8 @@ export default function TagQuest() {
             newQuestions.push({
               id: `vendor-decade-${vendor}`,
               text: `Should all "${vendor}" products be "${topDecade[0]}"?`,
-              context: `${topDecade[1]} of ${total} products already have this decade.`,
-              impact: `Would tag ${missingDecade} more products`,
+              context: `${topDecade[1]} of ${total} already tagged`,
+              impact: `+${missingDecade} products`,
               affectedCount: missingDecade,
               type: 'vendor-decade',
               vendor: vendor,
@@ -165,7 +163,6 @@ export default function TagQuest() {
       return b.existingPct - a.existingPct;
     });
 
-    // Filter out already answered
     const filtered = newQuestions.filter(q => !questionHistory.find(h => h.questionId === q.id));
     setQuestions(filtered);
     setCurrentQuestionIndex(0);
@@ -177,7 +174,6 @@ export default function TagQuest() {
     }
   }, [vendors, generateQuestions]);
 
-  // Parse CSV helper
   const parseCSVLine = (line: string): string[] => {
     const result: string[] = [];
     let current = '';
@@ -195,7 +191,6 @@ export default function TagQuest() {
     return result;
   };
 
-  // Load CSV files
   const loadData = async (files: FileList) => {
     const newProducts: Product[] = [];
     const newVendors: Record<string, VendorData> = {};
@@ -268,7 +263,6 @@ export default function TagQuest() {
     setVendors(newVendors);
     setCertainty(newCertainty);
 
-    // Re-apply saved rules
     for (const rule of rules) {
       applyRuleToProducts(rule, newVendors, newCertainty);
     }
@@ -297,7 +291,6 @@ export default function TagQuest() {
     }
   };
 
-  // Create new session
   const createSession = async (name: string) => {
     const res = await fetch('/api/sessions', {
       method: 'POST',
@@ -310,7 +303,6 @@ export default function TagQuest() {
     setShowSessionPicker(false);
   };
 
-  // Load existing session
   const loadSession = async (sessionId: string) => {
     const res = await fetch(`/api/sessions/${sessionId}`);
     const session: Session = await res.json();
@@ -323,7 +315,6 @@ export default function TagQuest() {
       answer: a.answer
     })));
 
-    // Rebuild certainty from saved data
     const certMap: Record<string, CertaintyData> = {};
     for (const c of session.certainties || []) {
       if (!certMap[c.handle]) {
@@ -336,17 +327,14 @@ export default function TagQuest() {
       };
     }
     setCertainty(certMap);
-
     setShowSessionPicker(false);
   };
 
-  // Save progress
   const saveProgress = async () => {
     if (!currentSession) return;
 
     setSaving(true);
 
-    // Convert certainty map to array
     const certArray: Array<{
       handle: string;
       tagType: string;
@@ -381,15 +369,14 @@ export default function TagQuest() {
     });
 
     setSaving(false);
-    showToast(`Saved! ${questionHistory.length} questions, ${rules.length} rules`);
+    showToast(`Saved! ${questionHistory.length} Qs answered`);
   };
 
   const showToast = (message: string) => {
     setToast(message);
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 2000);
   };
 
-  // Answer question
   const answerQuestion = (type: 'yes' | 'no' | 'detailed') => {
     const q = questions[currentQuestionIndex];
     if (!q) return;
@@ -420,7 +407,6 @@ export default function TagQuest() {
       const newRules = [...rules, rule];
       setRules(newRules);
 
-      // Apply rule
       const newCertainty = { ...certainty };
       applyRuleToProducts(rule, vendors, newCertainty);
       setCertainty(newCertainty);
@@ -428,12 +414,9 @@ export default function TagQuest() {
 
     setCurrentQuestionIndex(prev => prev + 1);
     setDetailedAnswer('');
-
-    // Auto-save
     setTimeout(() => saveProgress(), 100);
   };
 
-  // Get affected products for current question
   const getAffectedProducts = (): Product[] => {
     const q = questions[currentQuestionIndex];
     if (!q) return [];
@@ -445,7 +428,6 @@ export default function TagQuest() {
     return vendorData.products.filter(p => !p[tagType]);
   };
 
-  // Calculate stats
   const getStats = () => {
     let high = 0, medium = 0, low = 0;
 
@@ -469,263 +451,221 @@ export default function TagQuest() {
   const withGenre = products.filter(p => p.existingGenre).length;
   const withDecade = products.filter(p => p.existingDecade).length;
 
-  // Session picker view
+  // Session picker
   if (showSessionPicker) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
-        <div className="max-w-2xl mx-auto">
-          <div className="text-center mb-8">
-            <h1 className="text-5xl font-bold text-white mb-2">Tag Quest</h1>
-            <p className="text-gray-400 text-lg">Answer questions. Build certainty. Tag everything.</p>
+      <div className="min-h-screen bg-gradient-to-br from-fuchsia-600 via-violet-600 to-indigo-700 p-4">
+        <div className="max-w-md mx-auto pt-8">
+          <div className="text-center mb-6">
+            <h1 className="text-4xl font-black text-white drop-shadow-lg">🏷️ TAG QUEST</h1>
+            <p className="text-white/80 text-sm mt-1">Level up your product tags!</p>
           </div>
 
-          <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl p-8">
-            <h2 className="text-2xl font-bold mb-6">Choose a Session</h2>
+          <div className="bg-white rounded-2xl shadow-2xl p-5">
+            <h2 className="text-lg font-bold text-gray-800 mb-4">Choose Session</h2>
 
             {sessions.length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Continue Previous</h3>
-                <div className="space-y-2">
-                  {sessions.map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => loadSession(s.id)}
-                      className="w-full text-left p-4 rounded-xl border-2 border-gray-200 hover:border-purple-500 transition-all flex justify-between items-center"
-                    >
-                      <div>
-                        <div className="font-semibold">{s.name}</div>
-                        <div className="text-sm text-gray-500">
-                          {s._count?.answers || 0} questions answered, {s._count?.rules || 0} rules
-                        </div>
-                      </div>
-                      <div className="text-sm text-gray-400">
-                        {new Date(s.updatedAt).toLocaleDateString()}
-                      </div>
-                    </button>
-                  ))}
-                </div>
+              <div className="mb-4 space-y-2">
+                {sessions.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => loadSession(s.id)}
+                    className="w-full text-left p-3 rounded-xl bg-gradient-to-r from-violet-50 to-fuchsia-50 border-2 border-violet-200 hover:border-violet-400 transition-all"
+                  >
+                    <div className="font-semibold text-gray-800">{s.name}</div>
+                    <div className="text-xs text-gray-500">
+                      {s._count?.answers || 0} answered • {new Date(s.updatedAt).toLocaleDateString()}
+                    </div>
+                  </button>
+                ))}
               </div>
             )}
 
-            <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Start Fresh</h3>
-              <button
-                onClick={() => createSession('Session ' + new Date().toLocaleDateString())}
-                className="w-full p-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
-              >
-                + New Session
-              </button>
-            </div>
+            <button
+              onClick={() => createSession('Session ' + new Date().toLocaleDateString())}
+              className="w-full p-3 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white font-bold hover:from-fuchsia-600 hover:to-violet-600 transition-all shadow-lg"
+            >
+              🚀 New Session
+            </button>
           </div>
         </div>
       </div>
     );
   }
 
-  // Main app view
+  // Main app
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-fuchsia-600 via-violet-600 to-indigo-700 p-3">
       {/* Toast */}
       {toast && (
-        <div className="fixed top-6 right-6 bg-green-500 text-white px-6 py-4 rounded-xl shadow-2xl z-50 flex items-center gap-3 animate-fade-in">
-          <span className="text-2xl">✓</span>
-          <div className="font-bold">{toast}</div>
+        <div className="fixed top-3 right-3 bg-emerald-500 text-white px-4 py-2 rounded-full shadow-lg z-50 text-sm font-bold animate-bounce">
+          ✓ {toast}
         </div>
       )}
 
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-lg mx-auto">
         {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold text-white mb-2">Tag Quest</h1>
-          <p className="text-gray-400 text-lg">
-            {currentSession?.name}
-            <button
-              onClick={() => setShowSessionPicker(true)}
-              className="ml-3 text-purple-400 hover:text-purple-300 text-sm"
-            >
-              (switch)
-            </button>
-          </p>
+        <div className="flex items-center justify-between mb-3">
+          <h1 className="text-2xl font-black text-white">🏷️ TAG QUEST</h1>
+          <button
+            onClick={() => setShowSessionPicker(true)}
+            className="text-white/70 text-xs hover:text-white"
+          >
+            switch
+          </button>
         </div>
 
-        {/* Stats Bar */}
+        {/* Stats */}
         {products.length > 0 && (
-          <div className="mb-6">
-            <div className="bg-white/10 backdrop-blur border border-white/20 rounded-xl p-4 mb-4">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-white font-semibold">Overall Progress</span>
-                <span className="text-green-400 font-bold">{stats.pct}%</span>
-              </div>
-              <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
+          <div className="bg-white/20 backdrop-blur rounded-xl p-3 mb-3">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="flex-1 bg-white/30 rounded-full h-3 overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-green-500 to-emerald-400 transition-all duration-500"
+                  className="h-full bg-gradient-to-r from-yellow-400 to-emerald-400 transition-all"
                   style={{ width: `${stats.pct}%` }}
                 />
               </div>
-              <div className="text-gray-400 text-xs mt-2">
-                {questionHistory.length} questions answered
-              </div>
+              <span className="text-white font-bold text-sm">{stats.pct}%</span>
             </div>
-
-            <div className="grid grid-cols-4 gap-4">
-              <div className="bg-white/10 backdrop-blur border border-white/20 rounded-xl p-4 text-center">
-                <div className="text-3xl font-bold text-white">{products.length}</div>
-                <div className="text-gray-400 text-sm">Products</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur border border-white/20 rounded-xl p-4 text-center">
-                <div className="text-3xl font-bold text-green-400">{stats.high}</div>
-                <div className="text-gray-400 text-sm">High Certainty</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur border border-white/20 rounded-xl p-4 text-center">
-                <div className="text-3xl font-bold text-yellow-400">{stats.medium}</div>
-                <div className="text-gray-400 text-sm">Medium</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur border border-white/20 rounded-xl p-4 text-center">
-                <div className="text-3xl font-bold text-red-400">{stats.low}</div>
-                <div className="text-gray-400 text-sm">Needs Work</div>
-              </div>
+            <div className="flex justify-between text-xs text-white/80">
+              <span>🎯 {questionHistory.length} answered</span>
+              <span>📦 {products.length} products</span>
+              <span>✅ {stats.high} done</span>
             </div>
           </div>
         )}
 
         {/* Load Section */}
         {products.length === 0 && (
-          <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl p-8 text-center mb-6">
-            <div className="text-6xl mb-4">📦</div>
-            <h2 className="text-2xl font-bold mb-4">Load Your Products</h2>
-            <p className="text-gray-600 mb-6">
+          <div className="bg-white rounded-2xl shadow-xl p-6 text-center">
+            <div className="text-5xl mb-3">📦</div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Load Products</h2>
+            <p className="text-gray-500 text-sm mb-4">
               {questionHistory.length > 0
-                ? `You have ${questionHistory.length} saved answers. Load your CSVs to continue.`
-                : 'Drop your Shopify product export CSVs to begin'}
+                ? `${questionHistory.length} saved answers. Load CSVs to continue!`
+                : 'Upload your Shopify CSV exports'}
             </p>
-            <div className="flex gap-4 justify-center items-center">
-              <input
-                type="file"
-                multiple
-                accept=".csv"
-                onChange={e => e.target.files && loadData(e.target.files)}
-                className="text-sm file:mr-4 file:py-3 file:px-6 file:rounded-full file:border-0 file:font-semibold file:bg-violet-100 file:text-violet-700 hover:file:bg-violet-200 file:cursor-pointer file:transition-all"
-              />
-            </div>
+            <input
+              type="file"
+              multiple
+              accept=".csv"
+              onChange={e => e.target.files && loadData(e.target.files)}
+              className="text-sm file:mr-2 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-bold file:bg-fuchsia-100 file:text-fuchsia-600 hover:file:bg-fuchsia-200 file:cursor-pointer"
+            />
           </div>
         )}
 
-        {/* Summary Section */}
+        {/* Summary */}
         {products.length > 0 && (
-          <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl p-6 mb-6">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <span className="text-2xl">📊</span> What I Found
-            </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4">
-                <div className="text-3xl font-bold text-green-600">
+          <div className="bg-white rounded-2xl shadow-xl p-4 mb-3">
+            <div className="flex gap-3">
+              <div className="flex-1 bg-emerald-50 rounded-xl p-3 text-center">
+                <div className="text-2xl font-black text-emerald-600">
                   {Math.round(100 * withGenre / products.length)}%
                 </div>
-                <div className="text-gray-600">have genre tags</div>
+                <div className="text-xs text-gray-500">genres</div>
               </div>
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4">
-                <div className="text-3xl font-bold text-blue-600">
+              <div className="flex-1 bg-blue-50 rounded-xl p-3 text-center">
+                <div className="text-2xl font-black text-blue-600">
                   {Math.round(100 * withDecade / products.length)}%
                 </div>
-                <div className="text-gray-600">have decade tags</div>
+                <div className="text-xs text-gray-500">decades</div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Question Section */}
+        {/* Question */}
         {products.length > 0 && currentQuestion && (
-          <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl p-8 mb-6">
-            <div className="flex items-start justify-between mb-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl">
+          <div className="bg-white rounded-2xl shadow-xl p-4 mb-3">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-fuchsia-500 to-violet-500 flex items-center justify-center text-white font-bold text-sm">
                   {questionHistory.length + 1}
                 </div>
-                <div className="text-sm text-gray-500">QUESTION</div>
+                <span className="text-xs text-gray-400 uppercase font-bold">Question</span>
               </div>
-              <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-2 rounded-full text-sm font-semibold animate-bounce">
-                {currentQuestion.affectedCount} products
+              <div className="bg-gradient-to-r from-amber-400 to-orange-400 text-white px-3 py-1 rounded-full text-xs font-bold">
+                {currentQuestion.impact}
               </div>
             </div>
 
-            <h2 className="text-2xl font-bold mb-3 text-black">{currentQuestion.text}</h2>
-            <p className="text-gray-600 mb-2">{currentQuestion.context}</p>
-            <p className="text-blue-600 text-sm mb-2">{currentQuestion.impact}</p>
+            <h2 className="text-lg font-bold text-black mb-2">{currentQuestion.text}</h2>
+            <p className="text-gray-500 text-sm mb-3">{currentQuestion.context}</p>
 
-            <details className="mb-6 bg-gray-50 rounded-xl">
-              <summary className="cursor-pointer px-4 py-3 font-medium text-violet-600 hover:text-violet-800">
-                Show affected products ({affectedProducts.length})
+            <details className="mb-4 bg-gray-50 rounded-lg">
+              <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-violet-600">
+                👁️ See {affectedProducts.length} products
               </summary>
-              <div className="px-4 pb-4 max-h-48 overflow-y-auto text-sm">
+              <div className="px-3 pb-3 max-h-32 overflow-y-auto text-xs text-black">
                 {affectedProducts.map(p => (
-                  <div key={p.handle} className="py-1 border-b border-gray-200 last:border-0">
-                    <span className="font-medium">{p.title}</span>
+                  <div key={p.handle} className="py-1 border-b border-gray-100 last:border-0">
+                    {p.title}
                   </div>
                 ))}
               </div>
             </details>
 
-            <div className="flex gap-4 mb-6">
+            <div className="flex gap-2 mb-3">
               <button
                 onClick={() => answerQuestion('yes')}
-                className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-4 rounded-xl font-bold text-lg hover:from-green-600 hover:to-emerald-700 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                className="flex-1 bg-gradient-to-r from-emerald-400 to-green-500 text-white py-3 rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-lg"
               >
-                Yes
+                👍 YES
               </button>
               <button
                 onClick={() => answerQuestion('no')}
-                className="flex-1 bg-gradient-to-r from-red-500 to-rose-600 text-white py-4 rounded-xl font-bold text-lg hover:from-red-600 hover:to-rose-700 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                className="flex-1 bg-gradient-to-r from-rose-400 to-red-500 text-white py-3 rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-lg"
               >
-                No
+                👎 NO
               </button>
             </div>
 
-            <div className="border-t pt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Or explain in detail:
-              </label>
-              <textarea
-                value={detailedAnswer}
-                onChange={e => setDetailedAnswer(e.target.value)}
-                rows={2}
-                className="w-full border-2 border-gray-200 rounded-xl p-3 text-sm focus:border-violet-500 focus:outline-none transition-all"
-                placeholder="e.g., 'Only their 70s albums' or 'Check Discogs for each release'"
-              />
-              <button
-                onClick={() => answerQuestion('detailed')}
-                className="mt-3 bg-gray-700 text-white px-6 py-2 rounded-full text-sm font-semibold hover:bg-gray-800 transition-all"
-              >
-                Submit Detailed Answer
-              </button>
-            </div>
+            <details className="text-sm">
+              <summary className="cursor-pointer text-gray-400 text-xs">More options...</summary>
+              <div className="mt-2">
+                <textarea
+                  value={detailedAnswer}
+                  onChange={e => setDetailedAnswer(e.target.value)}
+                  rows={2}
+                  className="w-full border rounded-lg p-2 text-sm text-black"
+                  placeholder="Explain..."
+                />
+                <button
+                  onClick={() => answerQuestion('detailed')}
+                  className="mt-2 bg-gray-700 text-white px-4 py-1 rounded-full text-xs font-bold"
+                >
+                  Submit
+                </button>
+              </div>
+            </details>
           </div>
         )}
 
-        {/* All done message */}
+        {/* All done */}
         {products.length > 0 && !currentQuestion && (
-          <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl p-8 mb-6 text-center">
-            <div className="text-6xl mb-4">🎉</div>
-            <h2 className="text-2xl font-bold mb-2">All Done!</h2>
-            <p className="text-gray-600">No more questions based on current data patterns.</p>
+          <div className="bg-white rounded-2xl shadow-xl p-6 mb-3 text-center">
+            <div className="text-5xl mb-2">🎉</div>
+            <h2 className="text-xl font-bold text-gray-800">All Done!</h2>
+            <p className="text-gray-500 text-sm">No more questions!</p>
           </div>
         )}
 
-        {/* Action Buttons */}
+        {/* Actions */}
         {products.length > 0 && (
-          <div className="flex gap-4">
+          <div className="flex gap-2">
             <button
               onClick={saveProgress}
               disabled={saving}
-              className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:from-blue-600 hover:to-indigo-700 transition-all disabled:opacity-50"
+              className="flex-1 bg-white/20 backdrop-blur text-white py-3 rounded-xl font-bold text-sm hover:bg-white/30 transition-all disabled:opacity-50"
             >
-              <span className="text-xl">💾</span>
-              {saving ? 'Saving...' : 'Save Progress'}
+              💾 {saving ? 'Saving...' : 'Save'}
             </button>
             <button
               onClick={() => setShowPlaybook(true)}
-              className="flex-1 bg-white text-gray-800 py-4 rounded-xl font-bold border-2 border-gray-200 hover:border-violet-500 transition-all flex items-center justify-center gap-2"
+              className="flex-1 bg-white text-violet-600 py-3 rounded-xl font-bold text-sm hover:bg-violet-50 transition-all"
             >
-              <span className="text-xl">📋</span> Generate Playbook
+              📋 Playbook
             </button>
           </div>
         )}
@@ -734,17 +674,12 @@ export default function TagQuest() {
       {/* Playbook Modal */}
       {showPlaybook && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
-            <div className="p-6 border-b flex justify-between items-center">
-              <h2 className="text-2xl font-bold">📋 Bulk Edit Playbook</h2>
-              <button
-                onClick={() => setShowPlaybook(false)}
-                className="text-gray-500 hover:text-gray-700 text-3xl"
-              >
-                x
-              </button>
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[80vh] overflow-hidden">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-bold">📋 Playbook</h2>
+              <button onClick={() => setShowPlaybook(false)} className="text-gray-400 text-2xl">×</button>
             </div>
-            <div className="p-6 overflow-y-auto max-h-[50vh]">
+            <div className="p-4 overflow-y-auto max-h-[50vh]">
               {(() => {
                 const groups: Record<string, string[]> = {};
 
@@ -764,11 +699,7 @@ export default function TagQuest() {
 
                 const entries = Object.entries(groups);
                 if (entries.length === 0) {
-                  return (
-                    <p className="text-gray-500 text-center py-8">
-                      No high-certainty tags ready yet. Keep answering questions!
-                    </p>
-                  );
+                  return <p className="text-gray-400 text-center py-4 text-sm">Keep answering to build your playbook!</p>;
                 }
 
                 return entries.map(([key, handles], idx) => {
@@ -776,12 +707,12 @@ export default function TagQuest() {
                   const tag = type === 'genre' ? `Genre Parent: ${value}` : value;
 
                   return (
-                    <div key={key} className="mb-6 border-l-4 border-violet-500 pl-4">
-                      <div className="font-bold text-lg mb-1">Step {idx + 1}: Add &quot;{tag}&quot;</div>
-                      <div className="text-gray-600 mb-2">{handles.length} products</div>
-                      <details className="text-sm">
-                        <summary className="cursor-pointer text-violet-600 font-medium">Show handles</summary>
-                        <pre className="mt-2 bg-gray-100 p-3 rounded-lg text-xs overflow-auto max-h-32">
+                    <div key={key} className="mb-4 border-l-4 border-violet-400 pl-3">
+                      <div className="font-bold text-sm">Step {idx + 1}: Add &quot;{tag}&quot;</div>
+                      <div className="text-gray-500 text-xs">{handles.length} products</div>
+                      <details className="text-xs mt-1">
+                        <summary className="cursor-pointer text-violet-500">Show handles</summary>
+                        <pre className="mt-1 bg-gray-100 p-2 rounded text-xs overflow-auto max-h-24 text-black">
                           {handles.join('\n')}
                         </pre>
                       </details>
@@ -790,19 +721,10 @@ export default function TagQuest() {
                 });
               })()}
             </div>
-            <div className="p-6 border-t flex gap-4">
-              <button
-                onClick={() => {
-                  const content = document.querySelector('.overflow-y-auto')?.textContent || '';
-                  navigator.clipboard.writeText(content);
-                }}
-                className="flex-1 bg-gray-200 py-3 rounded-xl font-semibold hover:bg-gray-300 transition-all"
-              >
-                Copy to Clipboard
-              </button>
+            <div className="p-4 border-t">
               <button
                 onClick={() => setShowPlaybook(false)}
-                className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-3 rounded-xl font-semibold"
+                className="w-full bg-violet-500 text-white py-2 rounded-xl font-bold"
               >
                 Close
               </button>
@@ -810,16 +732,6 @@ export default function TagQuest() {
           </div>
         </div>
       )}
-
-      <style jsx global>{`
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in {
-          animation: fade-in 0.3s ease;
-        }
-      `}</style>
     </div>
   );
 }

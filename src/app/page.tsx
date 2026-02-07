@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
+const APP_PASSWORD = 'racine456';
+
 interface Product {
   handle: string;
   title: string;
@@ -74,6 +76,10 @@ interface Session {
 }
 
 export default function TagQuest() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState(false);
+
   const [products, setProducts] = useState<Product[]>([]);
   const [vendors, setVendors] = useState<Record<string, VendorData>>({});
   const [certainty, setCertainty] = useState<Record<string, CertaintyData>>({});
@@ -98,7 +104,17 @@ export default function TagQuest() {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
 
+  // Check for saved authentication
   useEffect(() => {
+    const saved = localStorage.getItem('tagquest_auth');
+    if (saved === 'true') {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
     fetch('/api/sessions')
       .then(res => res.json())
       .then(setSessions)
@@ -109,7 +125,58 @@ export default function TagQuest() {
       .then(res => res.json())
       .then((data: Product[]) => setCatalogCount(data.length))
       .catch(console.error);
-  }, []);
+  }, [isAuthenticated]);
+
+  const handleLogin = () => {
+    if (passwordInput === APP_PASSWORD) {
+      setIsAuthenticated(true);
+      localStorage.setItem('tagquest_auth', 'true');
+      setPasswordError(false);
+    } else {
+      setPasswordError(true);
+    }
+  };
+
+  // Password screen
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-fuchsia-600 via-violet-600 to-indigo-700 p-4 flex items-center justify-center">
+        <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
+          <div className="text-center mb-6">
+            <div className="text-4xl mb-2">🏷️</div>
+            <h1 className="text-2xl font-black text-gray-800">TAG QUEST</h1>
+            <p className="text-gray-500 text-sm mt-1">Enter password to continue</p>
+          </div>
+
+          <input
+            type="password"
+            value={passwordInput}
+            onChange={e => {
+              setPasswordInput(e.target.value);
+              setPasswordError(false);
+            }}
+            onKeyDown={e => e.key === 'Enter' && handleLogin()}
+            placeholder="Password"
+            className={`w-full p-4 rounded-xl border-2 text-lg text-center ${
+              passwordError ? 'border-red-400 bg-red-50' : 'border-gray-200'
+            } focus:border-violet-400 focus:outline-none`}
+            autoFocus
+          />
+
+          {passwordError && (
+            <p className="text-red-500 text-sm text-center mt-2">Incorrect password</p>
+          )}
+
+          <button
+            onClick={handleLogin}
+            className="w-full mt-4 p-4 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white font-bold text-lg active:scale-95 transition-all"
+          >
+            Enter
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const loadCatalogProducts = async () => {
     const res = await fetch('/api/products');
@@ -234,7 +301,7 @@ export default function TagQuest() {
       setUploadingCatalog(false);
       setUploadProgress({ stage: '', current: 0, total: 0 });
       setShowCatalogManager(false);
-      showToast(`Catalog updated: ${result.total} products`);
+      showToast(`Catalog updated: ${newProducts.length.toLocaleString()} products`);
     }, 500);
   };
 

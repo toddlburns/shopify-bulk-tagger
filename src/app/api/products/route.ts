@@ -9,7 +9,7 @@ export async function GET() {
   return NextResponse.json(products);
 }
 
-// POST - bulk insert products to the catalog (replaces all existing)
+// POST - append products to catalog (call DELETE first to clear)
 export async function POST(request: Request) {
   const body = await request.json();
 
@@ -26,32 +26,22 @@ export async function POST(request: Request) {
     existingDecade?: string;
   }>;
 
-  // Clear existing and bulk insert
-  await prisma.catalogProduct.deleteMany();
-
-  // Insert in chunks
-  const chunkSize = 1000;
-  for (let i = 0; i < products.length; i += chunkSize) {
-    const chunk = products.slice(i, i + chunkSize);
-    await prisma.catalogProduct.createMany({
-      data: chunk.map(p => ({
-        handle: p.handle,
-        title: p.title,
-        vendor: p.vendor,
-        existingGenre: p.existingGenre || null,
-        existingSubgenre: p.existingSubgenre || null,
-        existingDecade: p.existingDecade || null,
-      })),
-      skipDuplicates: true,
-    });
-  }
-
-  const total = await prisma.catalogProduct.count();
+  // Just insert this batch (skipDuplicates handles conflicts)
+  await prisma.catalogProduct.createMany({
+    data: products.map(p => ({
+      handle: p.handle,
+      title: p.title,
+      vendor: p.vendor,
+      existingGenre: p.existingGenre || null,
+      existingSubgenre: p.existingSubgenre || null,
+      existingDecade: p.existingDecade || null,
+    })),
+    skipDuplicates: true,
+  });
 
   return NextResponse.json({
     success: true,
-    inserted: products.length,
-    total
+    inserted: products.length
   });
 }
 

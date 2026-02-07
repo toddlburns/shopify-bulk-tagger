@@ -376,17 +376,34 @@ export default function TagQuest() {
       }
     }
 
-    setUploadProgress({ stage: `Uploading ${newProducts.length.toLocaleString()} products...`, current: 50, total: 100 });
+    // Clear existing catalog first
+    setUploadProgress({ stage: 'Clearing old catalog...', current: 0, total: 100 });
+    await fetch('/api/products', { method: 'DELETE' });
 
-    const res = await fetch('/api/products', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ products: newProducts })
-    });
-    const result = await res.json();
+    // Upload in small chunks for real progress
+    const chunkSize = 1000;
+    const totalChunks = Math.ceil(newProducts.length / chunkSize);
+
+    for (let i = 0; i < newProducts.length; i += chunkSize) {
+      const chunkNum = Math.floor(i / chunkSize) + 1;
+      const chunk = newProducts.slice(i, i + chunkSize);
+      const progress = Math.round((chunkNum / totalChunks) * 100);
+
+      setUploadProgress({
+        stage: `Uploading batch ${chunkNum} of ${totalChunks}...`,
+        current: progress,
+        total: 100
+      });
+
+      await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products: chunk })
+      });
+    }
 
     setUploadProgress({ stage: 'Done!', current: 100, total: 100 });
-    setCatalogCount(result.total || newProducts.length);
+    setCatalogCount(newProducts.length);
 
     setTimeout(() => {
       setUploadingCatalog(false);
@@ -962,30 +979,19 @@ export default function TagQuest() {
               ) : (
                 <div className="bg-gray-100 rounded-xl p-4">
                   <div className="text-gray-800 font-medium text-center mb-3 flex items-center justify-center gap-2">
-                    <span className="inline-block w-5 h-5 border-3 border-violet-500 border-t-transparent rounded-full animate-spin"></span>
+                    <span className="inline-block w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"></span>
                     {uploadProgress.stage || 'Starting...'}
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden relative">
-                    {/* Animated shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse" />
+                  <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
                     <div
-                      className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 relative overflow-hidden"
-                      style={{ width: '100%' }}
-                    >
-                      {/* Moving stripe animation */}
-                      <div
-                        className="absolute inset-0 opacity-30"
-                        style={{
-                          backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.3) 10px, rgba(255,255,255,0.3) 20px)',
-                          animation: 'moveStripes 1s linear infinite',
-                        }}
-                      />
-                    </div>
+                      className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 transition-all duration-300"
+                      style={{ width: `${uploadProgress.current}%` }}
+                    />
                   </div>
-                  <div className="text-gray-500 text-sm text-center mt-3">
-                    This may take 30-60 seconds for large catalogs...
+                  <div className="text-violet-600 font-bold text-lg text-center mt-2">
+                    {uploadProgress.current}%
                   </div>
-                  <div className="text-violet-600 text-xs text-center mt-1 animate-pulse">
+                  <div className="text-gray-400 text-xs text-center mt-1">
                     Do not close this window
                   </div>
                 </div>

@@ -962,23 +962,31 @@ export default function TagQuest() {
               ) : (
                 <div className="bg-gray-100 rounded-xl p-4">
                   <div className="text-gray-800 font-medium text-center mb-3 flex items-center justify-center gap-2">
-                    <span className="inline-block w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"></span>
+                    <span className="inline-block w-5 h-5 border-3 border-violet-500 border-t-transparent rounded-full animate-spin"></span>
                     {uploadProgress.stage || 'Starting...'}
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                  <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden relative">
+                    {/* Animated shimmer effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse" />
                     <div
-                      className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 transition-all duration-500 ease-out"
-                      style={{
-                        width: uploadProgress.total > 0
-                          ? `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%`
-                          : '5%'
-                      }}
-                    />
+                      className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 relative overflow-hidden"
+                      style={{ width: '100%' }}
+                    >
+                      {/* Moving stripe animation */}
+                      <div
+                        className="absolute inset-0 opacity-30"
+                        style={{
+                          backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.3) 10px, rgba(255,255,255,0.3) 20px)',
+                          animation: 'moveStripes 1s linear infinite',
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div className="text-gray-500 text-sm text-center mt-2">
-                    {uploadProgress.total > 0
-                      ? `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}% complete`
-                      : 'Preparing...'}
+                  <div className="text-gray-500 text-sm text-center mt-3">
+                    This may take 30-60 seconds for large catalogs...
+                  </div>
+                  <div className="text-violet-600 text-xs text-center mt-1 animate-pulse">
+                    Do not close this window
                   </div>
                 </div>
               )}

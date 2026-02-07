@@ -1,8 +1,40 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Component, ReactNode } from 'react';
 
 const APP_PASSWORD = 'racine456';
+
+// Error boundary to catch and display errors
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-red-600 p-4 flex items-center justify-center">
+          <div className="bg-white rounded-2xl p-6 max-w-md">
+            <h1 className="text-xl font-bold text-red-600 mb-2">Something went wrong</h1>
+            <p className="text-gray-700 text-sm mb-4">{this.state.error?.message}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full p-3 bg-red-600 text-white rounded-xl font-bold"
+            >
+              Reload
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface Product {
   handle: string;
@@ -75,7 +107,7 @@ interface Session {
   products?: Product[];
 }
 
-export default function TagQuest() {
+function TagQuestApp() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
@@ -1245,5 +1277,13 @@ export default function TagQuest() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function TagQuest() {
+  return (
+    <ErrorBoundary>
+      <TagQuestApp />
+    </ErrorBoundary>
   );
 }

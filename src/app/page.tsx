@@ -958,10 +958,26 @@ export default function TagQuest() {
                 Upload your Shopify CSV exports here. Products are stored globally and used by all sessions.
               </p>
 
-              {catalogCount > 0 && (
+              {catalogCount > 0 && !uploadingCatalog && (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 sm:p-3 mb-4">
-                  <div className="text-emerald-800 font-medium text-base">{catalogCount.toLocaleString()} products in catalog</div>
-                  <div className="text-emerald-600 text-sm sm:text-xs mt-1">Uploading new CSVs will update existing products</div>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <div className="text-emerald-800 font-medium text-base">{catalogCount.toLocaleString()} products</div>
+                      <div className="text-emerald-600 text-sm sm:text-xs">in catalog</div>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        if (confirm('Clear all products from catalog? This cannot be undone.')) {
+                          await fetch('/api/products', { method: 'DELETE' });
+                          setCatalogCount(0);
+                          showToast('Catalog cleared');
+                        }
+                      }}
+                      className="px-3 py-2 bg-red-100 text-red-600 rounded-lg text-sm font-medium active:scale-95 transition-all"
+                    >
+                      Clear All
+                    </button>
+                  </div>
                 </div>
               )}
 

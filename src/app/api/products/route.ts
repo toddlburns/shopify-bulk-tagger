@@ -9,7 +9,7 @@ export async function GET() {
   return NextResponse.json(products);
 }
 
-// POST - bulk upsert products to the catalog
+// POST - bulk insert products to the catalog (replaces existing)
 export async function POST(request: Request) {
   const body = await request.json();
 
@@ -26,44 +26,36 @@ export async function POST(request: Request) {
     existingDecade?: string;
   }>;
 
-  // Upsert products in chunks
-  const chunkSize = 500;
-  let upserted = 0;
+  // Clear existing catalog and bulk insert - MUCH faster than upsert
+  await prisma.catalogProduct.deleteMany();
+
+  // Bulk insert in chunks using createMany (very fast)
+  const chunkSize = 1000;
+  let inserted = 0;
 
   for (let i = 0; i < products.length; i += chunkSize) {
     const chunk = products.slice(i, i + chunkSize);
 
-    // Use transactions for each chunk
-    await prisma.$transaction(
-      chunk.map(p =>
-        prisma.catalogProduct.upsert({
-          where: { handle: p.handle },
-          update: {
-            title: p.title,
-            vendor: p.vendor,
-            existingGenre: p.existingGenre || null,
-            existingSubgenre: p.existingSubgenre || null,
-            existingDecade: p.existingDecade || null,
-          },
-          create: {
-            handle: p.handle,
-            title: p.title,
-            vendor: p.vendor,
-            existingGenre: p.existingGenre || null,
-            existingSubgenre: p.existingSubgenre || null,
-            existingDecade: p.existingDecade || null,
-          }
-        })
-      )
-    );
-    upserted += chunk.length;
+    await prisma.catalogProduct.createMany({
+      data: chunk.map(p => ({
+        handle: p.handle,
+        title: p.title,
+        vendor: p.vendor,
+        existingGenre: p.existingGenre || null,
+        existingSubgenre: p.existingSubgenre || null,
+        existingDecade: p.existingDecade || null,
+      })),
+      skipDuplicates: true,
+    });
+
+    inserted += chunk.length;
   }
 
   const total = await prisma.catalogProduct.count();
 
   return NextResponse.json({
     success: true,
-    upserted,
+    inserted,
     total
   });
 }

@@ -1,40 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, Component, ReactNode } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 const APP_PASSWORD = 'racine456';
-
-// Error boundary to catch and display errors
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
-  constructor(props: { children: ReactNode }) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen bg-red-600 p-4 flex items-center justify-center">
-          <div className="bg-white rounded-2xl p-6 max-w-md">
-            <h1 className="text-xl font-bold text-red-600 mb-2">Something went wrong</h1>
-            <p className="text-gray-700 text-sm mb-4">{this.state.error?.message}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full p-3 bg-red-600 text-white rounded-xl font-bold"
-            >
-              Reload
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
 
 interface Product {
   handle: string;
@@ -107,7 +75,7 @@ interface Session {
   products?: Product[];
 }
 
-function TagQuestApp() {
+export default function TagQuest() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
@@ -172,6 +140,84 @@ function TagQuestApp() {
       })
       .catch(console.error);
   }, [isAuthenticated]);
+
+  const generateQuestions = useCallback(() => {
+    const newQuestions: Question[] = [];
+
+    for (const [vendor, data] of Object.entries(vendors)) {
+      if (vendor === 'uDiscover Music' || vendor === 'Various Artists') continue;
+
+      const total = data.products.length;
+      if (total < 2) continue;
+
+      const genreCounts = data.existingGenres;
+      const totalWithGenre = Object.values(genreCounts).reduce((a, b) => a + b, 0);
+      const missingGenre = total - totalWithGenre;
+
+      if (missingGenre > 0 && totalWithGenre > 0) {
+        const entries = Object.entries(genreCounts).sort((a, b) => b[1] - a[1]);
+        if (entries.length > 0) {
+          const topGenre = entries[0];
+          const pct = Math.round(100 * topGenre[1] / total);
+
+          if (pct >= 50) {
+            newQuestions.push({
+              id: `vendor-genre-${vendor}`,
+              text: `Should all "${vendor}" products be "${topGenre[0]}"?`,
+              context: `${topGenre[1]} of ${total} already tagged`,
+              impact: `+${missingGenre} products`,
+              affectedCount: missingGenre,
+              type: 'vendor-genre',
+              vendor: vendor,
+              suggestedValue: topGenre[0],
+              existingPct: pct
+            });
+          }
+        }
+      }
+
+      const decadeCounts = data.existingDecades;
+      const totalWithDecade = Object.values(decadeCounts).reduce((a, b) => a + b, 0);
+      const missingDecade = total - totalWithDecade;
+
+      if (missingDecade > 0 && totalWithDecade > 0) {
+        const entries = Object.entries(decadeCounts).sort((a, b) => b[1] - a[1]);
+        if (entries.length > 0) {
+          const topDecade = entries[0];
+          const pct = Math.round(100 * topDecade[1] / total);
+
+          if (pct >= 50) {
+            newQuestions.push({
+              id: `vendor-decade-${vendor}`,
+              text: `Should all "${vendor}" products be "${topDecade[0]}"?`,
+              context: `${topDecade[1]} of ${total} already tagged`,
+              impact: `+${missingDecade} products`,
+              affectedCount: missingDecade,
+              type: 'vendor-decade',
+              vendor: vendor,
+              suggestedValue: topDecade[0],
+              existingPct: pct
+            });
+          }
+        }
+      }
+    }
+
+    newQuestions.sort((a, b) => {
+      if (b.affectedCount !== a.affectedCount) return b.affectedCount - a.affectedCount;
+      return b.existingPct - a.existingPct;
+    });
+
+    const filtered = newQuestions.filter(q => !questionHistory.find(h => h.questionId === q.id));
+    setQuestions(filtered);
+    setCurrentQuestionIndex(0);
+  }, [vendors, questionHistory]);
+
+  useEffect(() => {
+    if (Object.keys(vendors).length > 0) {
+      generateQuestions();
+    }
+  }, [vendors, generateQuestions]);
 
   const handleLogin = () => {
     if (passwordInput === APP_PASSWORD) {
@@ -349,84 +395,6 @@ function TagQuestApp() {
       showToast(`Catalog updated: ${newProducts.length.toLocaleString()} products`);
     }, 500);
   };
-
-  const generateQuestions = useCallback(() => {
-    const newQuestions: Question[] = [];
-
-    for (const [vendor, data] of Object.entries(vendors)) {
-      if (vendor === 'uDiscover Music' || vendor === 'Various Artists') continue;
-
-      const total = data.products.length;
-      if (total < 2) continue;
-
-      const genreCounts = data.existingGenres;
-      const totalWithGenre = Object.values(genreCounts).reduce((a, b) => a + b, 0);
-      const missingGenre = total - totalWithGenre;
-
-      if (missingGenre > 0 && totalWithGenre > 0) {
-        const entries = Object.entries(genreCounts).sort((a, b) => b[1] - a[1]);
-        if (entries.length > 0) {
-          const topGenre = entries[0];
-          const pct = Math.round(100 * topGenre[1] / total);
-
-          if (pct >= 50) {
-            newQuestions.push({
-              id: `vendor-genre-${vendor}`,
-              text: `Should all "${vendor}" products be "${topGenre[0]}"?`,
-              context: `${topGenre[1]} of ${total} already tagged`,
-              impact: `+${missingGenre} products`,
-              affectedCount: missingGenre,
-              type: 'vendor-genre',
-              vendor: vendor,
-              suggestedValue: topGenre[0],
-              existingPct: pct
-            });
-          }
-        }
-      }
-
-      const decadeCounts = data.existingDecades;
-      const totalWithDecade = Object.values(decadeCounts).reduce((a, b) => a + b, 0);
-      const missingDecade = total - totalWithDecade;
-
-      if (missingDecade > 0 && totalWithDecade > 0) {
-        const entries = Object.entries(decadeCounts).sort((a, b) => b[1] - a[1]);
-        if (entries.length > 0) {
-          const topDecade = entries[0];
-          const pct = Math.round(100 * topDecade[1] / total);
-
-          if (pct >= 50) {
-            newQuestions.push({
-              id: `vendor-decade-${vendor}`,
-              text: `Should all "${vendor}" products be "${topDecade[0]}"?`,
-              context: `${topDecade[1]} of ${total} already tagged`,
-              impact: `+${missingDecade} products`,
-              affectedCount: missingDecade,
-              type: 'vendor-decade',
-              vendor: vendor,
-              suggestedValue: topDecade[0],
-              existingPct: pct
-            });
-          }
-        }
-      }
-    }
-
-    newQuestions.sort((a, b) => {
-      if (b.affectedCount !== a.affectedCount) return b.affectedCount - a.affectedCount;
-      return b.existingPct - a.existingPct;
-    });
-
-    const filtered = newQuestions.filter(q => !questionHistory.find(h => h.questionId === q.id));
-    setQuestions(filtered);
-    setCurrentQuestionIndex(0);
-  }, [vendors, questionHistory]);
-
-  useEffect(() => {
-    if (Object.keys(vendors).length > 0) {
-      generateQuestions();
-    }
-  }, [vendors, generateQuestions]);
 
   const parseCSVLine = (line: string): string[] => {
     const result: string[] = [];
@@ -1280,10 +1248,3 @@ function TagQuestApp() {
   );
 }
 
-export default function TagQuest() {
-  return (
-    <ErrorBoundary>
-      <TagQuestApp />
-    </ErrorBoundary>
-  );
-}

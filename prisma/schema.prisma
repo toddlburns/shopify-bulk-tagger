@@ -1,9 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model Session {
@@ -22,9 +23,9 @@ model Rule {
   sessionId     String
   session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  type          String   // vendor-genre, vendor-decade
+  type          String
   vendor        String
-  tagType       String   // genre, decade
+  tagType       String
   value         String
   certaintyPct  Int
   reason        String?
@@ -50,10 +51,10 @@ model Certainty {
   session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   handle        String
-  tagType       String   // genre, subgenre, decade
+  tagType       String
   value         String
   pct           Int
-  source        String   // existing, rule
+  source        String
 
   @@unique([sessionId, handle, tagType])
 }

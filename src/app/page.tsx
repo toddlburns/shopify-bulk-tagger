@@ -91,7 +91,10 @@ export default function TagQuest() {
   const [catalogCount, setCatalogCount] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [uploadingCatalog, setUploadingCatalog] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ stage: '', current: 0, total: 0 });
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
 
@@ -156,10 +159,16 @@ export default function TagQuest() {
 
   const uploadToCatalog = async (files: FileList) => {
     setUploadingCatalog(true);
+    setUploadProgress({ stage: 'Reading files...', current: 0, total: files.length });
+
     const newProducts: Product[] = [];
     const seen = new Set<string>();
+    const fileArray = Array.from(files);
 
-    for (const file of Array.from(files)) {
+    for (let fileIdx = 0; fileIdx < fileArray.length; fileIdx++) {
+      const file = fileArray[fileIdx];
+      setUploadProgress({ stage: `Reading ${file.name}...`, current: fileIdx + 1, total: fileArray.length });
+
       const text = await file.text();
       const lines = text.split('\n');
       const headers = parseCSVLine(lines[0]);
@@ -192,6 +201,8 @@ export default function TagQuest() {
       }
     }
 
+    setUploadProgress({ stage: `Uploading ${newProducts.length.toLocaleString()} products...`, current: 0, total: 100 });
+
     const res = await fetch('/api/products', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -199,10 +210,15 @@ export default function TagQuest() {
     });
     const result = await res.json();
 
+    setUploadProgress({ stage: 'Done!', current: 100, total: 100 });
     setCatalogCount(result.total);
-    setUploadingCatalog(false);
-    setShowCatalogManager(false);
-    showToast(`Catalog updated: ${result.total} products`);
+
+    setTimeout(() => {
+      setUploadingCatalog(false);
+      setUploadProgress({ stage: '', current: 0, total: 0 });
+      setShowCatalogManager(false);
+      showToast(`Catalog updated: ${result.total} products`);
+    }, 500);
   };
 
   const generateQuestions = useCallback(() => {
@@ -519,6 +535,66 @@ export default function TagQuest() {
     setShowSessionPicker(false);
   };
 
+  // Sync/refresh from server
+  const syncFromServer = async () => {
+    if (!currentSession) return;
+
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/sessions/${currentSession.id}`);
+      const session: Session = await res.json();
+
+      setRules(session.rules || []);
+      setQuestionHistory((session.answers || []).map(a => ({
+        questionId: a.questionId,
+        questionText: a.questionText,
+        answer: a.answer
+      })));
+
+      // Reload certainties
+      const certMap: Record<string, CertaintyData> = {};
+
+      // First, initialize from products
+      for (const product of products) {
+        certMap[product.handle] = { genre: {}, subgenre: {}, decade: {} };
+        if (product.existingGenre) {
+          certMap[product.handle].genre = { value: product.existingGenre, pct: 100, source: 'existing' };
+        }
+        if (product.existingSubgenre) {
+          certMap[product.handle].subgenre = { value: product.existingSubgenre, pct: 100, source: 'existing' };
+        }
+        if (product.existingDecade) {
+          certMap[product.handle].decade = { value: product.existingDecade, pct: 100, source: 'existing' };
+        }
+      }
+
+      // Override with saved session certainties
+      for (const c of session.certainties || []) {
+        if (!certMap[c.handle]) {
+          certMap[c.handle] = { genre: {}, subgenre: {}, decade: {} };
+        }
+        certMap[c.handle][c.tagType as keyof CertaintyData] = {
+          value: c.value,
+          pct: c.pct,
+          source: c.source
+        };
+      }
+
+      setCertainty(certMap);
+
+      // Apply saved rules
+      for (const rule of session.rules || []) {
+        applyRuleToProducts(rule, vendors, certMap);
+      }
+
+      showToast('Synced!');
+    } catch (error) {
+      console.error('Sync failed:', error);
+      showToast('Sync failed');
+    }
+    setSyncing(false);
+  };
+
   const saveProgress = async () => {
     if (!currentSession) return;
 
@@ -566,7 +642,8 @@ export default function TagQuest() {
     });
 
     setSaving(false);
-    showToast(`Saved! ${questionHistory.length} Qs answered`);
+    setLastSaved(new Date());
+    showToast('Synced!');
   };
 
   const showToast = (message: string) => {
@@ -651,8 +728,8 @@ export default function TagQuest() {
   // Session picker
   if (showSessionPicker) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-fuchsia-600 via-violet-600 to-indigo-700 p-4">
-        <div className="max-w-md mx-auto pt-8">
+      <div className="min-h-screen bg-gradient-to-br from-fuchsia-600 via-violet-600 to-indigo-700 p-4 pb-safe">
+        <div className="max-w-md mx-auto pt-safe sm:pt-8">
           <div className="text-center mb-6">
             <h1 className="text-4xl font-black text-white drop-shadow-lg">🏷️ TAG QUEST</h1>
             <p className="text-white/80 text-sm mt-1">Level up your product tags!</p>
@@ -680,11 +757,11 @@ export default function TagQuest() {
             <h2 className="text-lg font-bold text-gray-800 mb-4">Choose Session</h2>
 
             {sessions.length > 0 && (
-              <div className="mb-4 space-y-2">
+              <div className="mb-4 space-y-3">
                 {sessions.map(s => (
                   <div
                     key={s.id}
-                    className="relative p-3 rounded-xl bg-gradient-to-r from-violet-50 to-fuchsia-50 border-2 border-violet-200 hover:border-violet-400 transition-all"
+                    className="relative p-4 sm:p-3 rounded-xl bg-gradient-to-r from-violet-50 to-fuchsia-50 border-2 border-violet-200 hover:border-violet-400 active:scale-[0.98] transition-all touch-manipulation"
                   >
                     {editingSessionId === s.id ? (
                       <div className="flex gap-2" onClick={e => e.stopPropagation()}>
@@ -693,18 +770,18 @@ export default function TagQuest() {
                           value={editingName}
                           onChange={e => setEditingName(e.target.value)}
                           onKeyDown={e => e.key === 'Enter' && saveRename(s.id)}
-                          className="flex-1 px-2 py-1 rounded border border-violet-300 text-sm text-black"
+                          className="flex-1 px-3 py-2 rounded-lg border border-violet-300 text-base text-black"
                           autoFocus
                         />
                         <button
                           onClick={() => saveRename(s.id)}
-                          className="px-2 py-1 bg-emerald-500 text-white rounded text-xs font-bold"
+                          className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-bold active:scale-95"
                         >
                           Save
                         </button>
                         <button
                           onClick={() => setEditingSessionId(null)}
-                          className="px-2 py-1 bg-gray-300 text-gray-700 rounded text-xs font-bold"
+                          className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg text-sm font-bold active:scale-95"
                         >
                           Cancel
                         </button>
@@ -715,25 +792,25 @@ export default function TagQuest() {
                         className="cursor-pointer"
                       >
                         <div className="flex items-center justify-between">
-                          <div className="font-semibold text-gray-800">{s.name}</div>
-                          <div className="flex gap-1">
+                          <div className="font-semibold text-gray-800 text-base">{s.name}</div>
+                          <div className="flex gap-2">
                             <button
                               onClick={(e) => startRenaming(s, e)}
-                              className="p-1 text-gray-400 hover:text-violet-600 transition-colors"
+                              className="p-2 text-gray-400 hover:text-violet-600 active:scale-90 transition-all"
                               title="Rename"
                             >
                               ✏️
                             </button>
                             <button
                               onClick={(e) => deleteSession(s.id, e)}
-                              className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                              className="p-2 text-gray-400 hover:text-red-500 active:scale-90 transition-all"
                               title="Delete"
                             >
                               🗑️
                             </button>
                           </div>
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-sm text-gray-500 mt-1">
                           {s._count?.answers || 0} answered • {new Date(s.updatedAt).toLocaleDateString()}
                         </div>
                       </div>
@@ -745,7 +822,7 @@ export default function TagQuest() {
 
             <button
               onClick={() => catalogCount > 0 ? createSession('Session ' + new Date().toLocaleDateString()) : showToast('Upload products first!')}
-              className={`w-full p-3 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white font-bold transition-all shadow-lg ${catalogCount > 0 ? 'hover:from-fuchsia-600 hover:to-violet-600' : 'opacity-70'}`}
+              className={`w-full p-4 sm:p-3 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white font-bold text-lg sm:text-base transition-all shadow-lg active:scale-95 touch-manipulation ${catalogCount > 0 ? 'hover:from-fuchsia-600 hover:to-violet-600' : 'opacity-70'}`}
             >
               🚀 New Session
             </button>
@@ -754,37 +831,67 @@ export default function TagQuest() {
 
         {/* Catalog Manager Modal */}
         {showCatalogManager && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl max-w-md w-full p-6">
+          <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center sm:p-4 z-50">
+            <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-6 pb-safe">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-gray-800">Product Catalog</h2>
-                <button onClick={() => setShowCatalogManager(false)} className="text-gray-400 text-2xl">×</button>
+                {!uploadingCatalog && (
+                  <button onClick={() => setShowCatalogManager(false)} className="p-2 text-gray-400 text-2xl active:scale-90 transition-all">×</button>
+                )}
               </div>
 
-              <p className="text-gray-600 text-sm mb-4">
+              <p className="text-gray-600 text-base sm:text-sm mb-4">
                 Upload your Shopify CSV exports here. Products are stored globally and used by all sessions.
               </p>
 
               {catalogCount > 0 && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-4">
-                  <div className="text-emerald-800 font-medium">{catalogCount.toLocaleString()} products in catalog</div>
-                  <div className="text-emerald-600 text-xs">Uploading new CSVs will update existing products</div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 sm:p-3 mb-4">
+                  <div className="text-emerald-800 font-medium text-base">{catalogCount.toLocaleString()} products in catalog</div>
+                  <div className="text-emerald-600 text-sm sm:text-xs mt-1">Uploading new CSVs will update existing products</div>
                 </div>
               )}
 
-              <input
-                type="file"
-                multiple
-                accept=".csv"
-                onChange={e => e.target.files && uploadToCatalog(e.target.files)}
-                disabled={uploadingCatalog}
-                className="w-full text-sm file:mr-2 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-bold file:bg-fuchsia-100 file:text-fuchsia-600 hover:file:bg-fuchsia-200 file:cursor-pointer disabled:opacity-50"
-              />
-
-              {uploadingCatalog && (
-                <div className="mt-4 text-center text-violet-600 font-medium">
-                  Uploading products...
+              {!uploadingCatalog ? (
+                <label className="block w-full p-4 sm:p-3 text-center bg-fuchsia-100 text-fuchsia-600 rounded-xl font-bold text-base cursor-pointer active:scale-95 transition-all touch-manipulation">
+                  Choose CSV Files
+                  <input
+                    type="file"
+                    multiple
+                    accept=".csv"
+                    onChange={e => e.target.files && uploadToCatalog(e.target.files)}
+                    className="hidden"
+                  />
+                </label>
+              ) : (
+                <div className="bg-gray-100 rounded-xl p-4">
+                  <div className="text-gray-800 font-medium text-center mb-3">
+                    {uploadProgress.stage}
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 transition-all duration-300"
+                      style={{
+                        width: uploadProgress.total > 0
+                          ? `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%`
+                          : '0%'
+                      }}
+                    />
+                  </div>
+                  {uploadProgress.total > 0 && uploadProgress.stage.includes('Uploading') && (
+                    <div className="text-gray-500 text-sm text-center mt-2">
+                      This may take a moment for large catalogs...
+                    </div>
+                  )}
                 </div>
+              )}
+
+              {!uploadingCatalog && (
+                <button
+                  onClick={() => setShowCatalogManager(false)}
+                  className="w-full mt-4 p-4 sm:p-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-base active:scale-95 transition-all touch-manipulation"
+                >
+                  Cancel
+                </button>
               )}
             </div>
           </div>
@@ -795,24 +902,40 @@ export default function TagQuest() {
 
   // Main app
   return (
-    <div className="min-h-screen bg-gradient-to-br from-fuchsia-600 via-violet-600 to-indigo-700 p-3">
+    <div className="min-h-screen bg-gradient-to-br from-fuchsia-600 via-violet-600 to-indigo-700 p-3 pb-safe">
       {/* Toast */}
       {toast && (
-        <div className="fixed top-3 right-3 bg-emerald-500 text-white px-4 py-2 rounded-full shadow-lg z-50 text-sm font-bold animate-bounce">
-          ✓ {toast}
+        <div className="fixed top-safe right-3 bg-emerald-500 text-white px-4 py-2 rounded-full shadow-lg z-50 text-sm font-bold animate-bounce">
+          {toast}
         </div>
       )}
 
-      <div className="max-w-lg mx-auto">
+      <div className="max-w-lg mx-auto pt-safe">
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-2xl font-black text-white">🏷️ TAG QUEST</h1>
-          <button
-            onClick={() => setShowSessionPicker(true)}
-            className="text-white/70 text-xs hover:text-white"
-          >
-            switch
-          </button>
+          <h1 className="text-xl sm:text-2xl font-black text-white">🏷️ TAG QUEST</h1>
+          <div className="flex items-center gap-2">
+            {/* Sync indicator */}
+            {lastSaved && (
+              <span className="text-white/50 text-xs hidden sm:inline">
+                saved {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+            <button
+              onClick={syncFromServer}
+              disabled={syncing}
+              className="p-2 text-white/70 hover:text-white active:scale-95 transition-all disabled:opacity-50"
+              title="Sync from server"
+            >
+              <span className={syncing ? 'animate-spin inline-block' : ''}>🔄</span>
+            </button>
+            <button
+              onClick={() => setShowSessionPicker(true)}
+              className="px-3 py-2 text-white/70 text-xs hover:text-white bg-white/10 rounded-lg active:scale-95 transition-all"
+            >
+              switch
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -897,16 +1020,16 @@ export default function TagQuest() {
               </div>
             </details>
 
-            <div className="flex gap-2 mb-3">
+            <div className="flex gap-3 mb-4">
               <button
                 onClick={() => answerQuestion('yes')}
-                className="flex-1 bg-gradient-to-r from-emerald-400 to-green-500 text-white py-3 rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-lg"
+                className="flex-1 bg-gradient-to-r from-emerald-400 to-green-500 text-white py-4 sm:py-3 rounded-2xl font-bold text-xl sm:text-lg active:scale-95 hover:scale-105 transition-transform shadow-lg touch-manipulation"
               >
                 👍 YES
               </button>
               <button
                 onClick={() => answerQuestion('no')}
-                className="flex-1 bg-gradient-to-r from-rose-400 to-red-500 text-white py-3 rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-lg"
+                className="flex-1 bg-gradient-to-r from-rose-400 to-red-500 text-white py-4 sm:py-3 rounded-2xl font-bold text-xl sm:text-lg active:scale-95 hover:scale-105 transition-transform shadow-lg touch-manipulation"
               >
                 👎 NO
               </button>
@@ -942,19 +1065,19 @@ export default function TagQuest() {
           </div>
         )}
 
-        {/* Actions */}
+        {/* Actions - fixed at bottom on mobile */}
         {products.length > 0 && (
-          <div className="flex gap-2">
+          <div className="flex gap-3 pb-4">
             <button
               onClick={saveProgress}
               disabled={saving}
-              className="flex-1 bg-white/20 backdrop-blur text-white py-3 rounded-xl font-bold text-sm hover:bg-white/30 transition-all disabled:opacity-50"
+              className="flex-1 bg-white/20 backdrop-blur text-white py-4 sm:py-3 rounded-xl font-bold text-base sm:text-sm active:scale-95 hover:bg-white/30 transition-all disabled:opacity-50 touch-manipulation"
             >
-              💾 {saving ? 'Saving...' : 'Save'}
+              {saving ? '⏳ Saving...' : '💾 Save'}
             </button>
             <button
               onClick={() => setShowPlaybook(true)}
-              className="flex-1 bg-white text-violet-600 py-3 rounded-xl font-bold text-sm hover:bg-violet-50 transition-all"
+              className="flex-1 bg-white text-violet-600 py-4 sm:py-3 rounded-xl font-bold text-base sm:text-sm active:scale-95 hover:bg-violet-50 transition-all touch-manipulation"
             >
               📋 Playbook
             </button>
@@ -964,11 +1087,11 @@ export default function TagQuest() {
 
       {/* Playbook Modal */}
       {showPlaybook && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full max-h-[80vh] overflow-hidden">
+        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center sm:p-4 z-50">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[85vh] sm:max-h-[80vh] overflow-hidden">
             <div className="p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-bold">📋 Playbook</h2>
-              <button onClick={() => setShowPlaybook(false)} className="text-gray-400 text-2xl">×</button>
+              <button onClick={() => setShowPlaybook(false)} className="p-2 text-gray-400 text-2xl active:scale-90 transition-all">×</button>
             </div>
             <div className="p-4 overflow-y-auto max-h-[50vh]">
               {(() => {
@@ -1012,10 +1135,10 @@ export default function TagQuest() {
                 });
               })()}
             </div>
-            <div className="p-4 border-t">
+            <div className="p-4 border-t pb-safe">
               <button
                 onClick={() => setShowPlaybook(false)}
-                className="w-full bg-violet-500 text-white py-2 rounded-xl font-bold"
+                className="w-full bg-violet-500 text-white py-4 sm:py-3 rounded-xl font-bold text-lg sm:text-base active:scale-95 transition-all touch-manipulation"
               >
                 Close
               </button>

@@ -123,13 +123,21 @@ export default function TagQuest() {
 
     fetch('/api/sessions')
       .then(res => res.json())
-      .then(setSessions)
+      .then(data => {
+        if (Array.isArray(data)) {
+          setSessions(data);
+        }
+      })
       .catch(console.error);
 
     // Fetch catalog count
     fetch('/api/products')
       .then(res => res.json())
-      .then((data: Product[]) => setCatalogCount(data.length))
+      .then(data => {
+        if (Array.isArray(data)) {
+          setCatalogCount(data.length);
+        }
+      })
       .catch(console.error);
   }, [isAuthenticated]);
 

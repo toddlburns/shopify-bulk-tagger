@@ -75,3 +75,16 @@ model Product {
 
   @@unique([sessionId, handle])
 }
+
+// Global product catalog - uploaded once, used by all sessions
+model CatalogProduct {
+  id              String   @id @default(cuid())
+  handle          String   @unique
+  title           String
+  vendor          String
+  existingGenre   String?
+  existingSubgenre String?
+  existingDecade  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

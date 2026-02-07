@@ -87,15 +87,123 @@ export default function TagQuest() {
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [showSessionPicker, setShowSessionPicker] = useState(true);
   const [showPlaybook, setShowPlaybook] = useState(false);
+  const [showCatalogManager, setShowCatalogManager] = useState(false);
+  const [catalogCount, setCatalogCount] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingCatalog, setUploadingCatalog] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
 
   useEffect(() => {
     fetch('/api/sessions')
       .then(res => res.json())
       .then(setSessions)
       .catch(console.error);
+
+    // Fetch catalog count
+    fetch('/api/products')
+      .then(res => res.json())
+      .then((data: Product[]) => setCatalogCount(data.length))
+      .catch(console.error);
   }, []);
+
+  const loadCatalogProducts = async () => {
+    const res = await fetch('/api/products');
+    const catalogProducts: Product[] = await res.json();
+
+    if (catalogProducts.length === 0) return;
+
+    const newVendors: Record<string, VendorData> = {};
+    const newCertainty: Record<string, CertaintyData> = {};
+
+    for (const product of catalogProducts) {
+      if (!newVendors[product.vendor]) {
+        newVendors[product.vendor] = { products: [], existingGenres: {}, existingDecades: {} };
+      }
+      newVendors[product.vendor].products.push(product);
+
+      if (product.existingGenre) {
+        newVendors[product.vendor].existingGenres[product.existingGenre] =
+          (newVendors[product.vendor].existingGenres[product.existingGenre] || 0) + 1;
+      }
+      if (product.existingDecade) {
+        newVendors[product.vendor].existingDecades[product.existingDecade] =
+          (newVendors[product.vendor].existingDecades[product.existingDecade] || 0) + 1;
+      }
+
+      newCertainty[product.handle] = { genre: {}, subgenre: {}, decade: {} };
+      if (product.existingGenre) {
+        newCertainty[product.handle].genre = { value: product.existingGenre, pct: 100, source: 'existing' };
+      }
+      if (product.existingSubgenre) {
+        newCertainty[product.handle].subgenre = { value: product.existingSubgenre, pct: 100, source: 'existing' };
+      }
+      if (product.existingDecade) {
+        newCertainty[product.handle].decade = { value: product.existingDecade, pct: 100, source: 'existing' };
+      }
+    }
+
+    setProducts(catalogProducts);
+    setVendors(newVendors);
+    setCertainty(newCertainty);
+
+    // Apply any existing rules
+    for (const rule of rules) {
+      applyRuleToProducts(rule, newVendors, newCertainty);
+    }
+  };
+
+  const uploadToCatalog = async (files: FileList) => {
+    setUploadingCatalog(true);
+    const newProducts: Product[] = [];
+    const seen = new Set<string>();
+
+    for (const file of Array.from(files)) {
+      const text = await file.text();
+      const lines = text.split('\n');
+      const headers = parseCSVLine(lines[0]);
+      const idx = {
+        handle: headers.indexOf('Handle'),
+        title: headers.indexOf('Title'),
+        vendor: headers.indexOf('Vendor'),
+        tags: headers.indexOf('Tags')
+      };
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = parseCSVLine(lines[i]);
+        const handle = values[idx.handle];
+        if (!handle || seen.has(handle)) continue;
+        seen.add(handle);
+
+        const tags = values[idx.tags] || '';
+        const genreMatch = tags.match(/Genre Parent:\s*([^,]+)/i);
+        const subgenreMatch = tags.match(/subgenre:\s*([^,]+)/i);
+        const decadeMatch = tags.match(/\b(\d{2,4}[cC])\b/);
+
+        newProducts.push({
+          handle,
+          title: values[idx.title] || '',
+          vendor: values[idx.vendor] || '',
+          existingGenre: genreMatch ? genreMatch[1].trim() : null,
+          existingSubgenre: subgenreMatch ? subgenreMatch[1].trim() : null,
+          existingDecade: decadeMatch ? decadeMatch[1].toUpperCase() : null
+        });
+      }
+    }
+
+    const res = await fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ products: newProducts })
+    });
+    const result = await res.json();
+
+    setCatalogCount(result.total);
+    setUploadingCatalog(false);
+    setShowCatalogManager(false);
+    showToast(`Catalog updated: ${result.total} products`);
+  };
 
   const generateQuestions = useCallback(() => {
     const newQuestions: Question[] = [];
@@ -302,6 +410,40 @@ export default function TagQuest() {
     setSessions(prev => [session, ...prev]);
     setCurrentSession(session);
     setShowSessionPicker(false);
+
+    // Auto-load products from catalog
+    await loadCatalogProducts();
+  };
+
+  const deleteSession = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Delete this session? This cannot be undone.')) return;
+
+    await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+    setSessions(prev => prev.filter(s => s.id !== sessionId));
+    showToast('Session deleted');
+  };
+
+  const startRenaming = (session: Session, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingSessionId(session.id);
+    setEditingName(session.name);
+  };
+
+  const saveRename = async (sessionId: string) => {
+    if (!editingName.trim()) return;
+
+    await fetch(`/api/sessions/${sessionId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: editingName.trim() })
+    });
+
+    setSessions(prev => prev.map(s =>
+      s.id === sessionId ? { ...s, name: editingName.trim() } : s
+    ));
+    setEditingSessionId(null);
+    setEditingName('');
   };
 
   const loadSession = async (sessionId: string) => {
@@ -316,25 +458,15 @@ export default function TagQuest() {
       answer: a.answer
     })));
 
-    const certMap: Record<string, CertaintyData> = {};
-    for (const c of session.certainties || []) {
-      if (!certMap[c.handle]) {
-        certMap[c.handle] = { genre: {}, subgenre: {}, decade: {} };
-      }
-      certMap[c.handle][c.tagType as keyof CertaintyData] = {
-        value: c.value,
-        pct: c.pct,
-        source: c.source
-      };
-    }
-    setCertainty(certMap);
+    // Load products from global catalog
+    const catalogRes = await fetch('/api/products');
+    const catalogProducts: Product[] = await catalogRes.json();
 
-    // Load products from session if they exist
-    if (session.products && session.products.length > 0) {
-      const loadedProducts = session.products;
+    if (catalogProducts.length > 0) {
       const loadedVendors: Record<string, VendorData> = {};
+      const certMap: Record<string, CertaintyData> = {};
 
-      for (const product of loadedProducts) {
+      for (const product of catalogProducts) {
         if (!loadedVendors[product.vendor]) {
           loadedVendors[product.vendor] = { products: [], existingGenres: {}, existingDecades: {} };
         }
@@ -348,10 +480,40 @@ export default function TagQuest() {
           loadedVendors[product.vendor].existingDecades[product.existingDecade] =
             (loadedVendors[product.vendor].existingDecades[product.existingDecade] || 0) + 1;
         }
+
+        // Initialize certainty from product tags
+        certMap[product.handle] = { genre: {}, subgenre: {}, decade: {} };
+        if (product.existingGenre) {
+          certMap[product.handle].genre = { value: product.existingGenre, pct: 100, source: 'existing' };
+        }
+        if (product.existingSubgenre) {
+          certMap[product.handle].subgenre = { value: product.existingSubgenre, pct: 100, source: 'existing' };
+        }
+        if (product.existingDecade) {
+          certMap[product.handle].decade = { value: product.existingDecade, pct: 100, source: 'existing' };
+        }
       }
 
-      setProducts(loadedProducts);
+      // Override with saved session certainties
+      for (const c of session.certainties || []) {
+        if (!certMap[c.handle]) {
+          certMap[c.handle] = { genre: {}, subgenre: {}, decade: {} };
+        }
+        certMap[c.handle][c.tagType as keyof CertaintyData] = {
+          value: c.value,
+          pct: c.pct,
+          source: c.source
+        };
+      }
+
+      setProducts(catalogProducts);
       setVendors(loadedVendors);
+      setCertainty(certMap);
+
+      // Apply saved rules
+      for (const rule of session.rules || []) {
+        applyRuleToProducts(rule, loadedVendors, certMap);
+      }
     }
 
     setShowSessionPicker(false);
@@ -496,34 +658,137 @@ export default function TagQuest() {
             <p className="text-white/80 text-sm mt-1">Level up your product tags!</p>
           </div>
 
+          {/* Product Catalog Status */}
+          <div className="bg-white/20 backdrop-blur rounded-xl p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-white font-bold">Product Catalog</div>
+                <div className="text-white/70 text-sm">
+                  {catalogCount > 0 ? `${catalogCount.toLocaleString()} products loaded` : 'No products uploaded yet'}
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCatalogManager(true)}
+                className="px-3 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm font-medium transition-all"
+              >
+                {catalogCount > 0 ? 'Update' : 'Upload'}
+              </button>
+            </div>
+          </div>
+
           <div className="bg-white rounded-2xl shadow-2xl p-5">
             <h2 className="text-lg font-bold text-gray-800 mb-4">Choose Session</h2>
 
             {sessions.length > 0 && (
               <div className="mb-4 space-y-2">
                 {sessions.map(s => (
-                  <button
+                  <div
                     key={s.id}
-                    onClick={() => loadSession(s.id)}
-                    className="w-full text-left p-3 rounded-xl bg-gradient-to-r from-violet-50 to-fuchsia-50 border-2 border-violet-200 hover:border-violet-400 transition-all"
+                    className="relative p-3 rounded-xl bg-gradient-to-r from-violet-50 to-fuchsia-50 border-2 border-violet-200 hover:border-violet-400 transition-all"
                   >
-                    <div className="font-semibold text-gray-800">{s.name}</div>
-                    <div className="text-xs text-gray-500">
-                      {s._count?.answers || 0} answered • {s._count?.products || 0} products • {new Date(s.updatedAt).toLocaleDateString()}
-                    </div>
-                  </button>
+                    {editingSessionId === s.id ? (
+                      <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          value={editingName}
+                          onChange={e => setEditingName(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && saveRename(s.id)}
+                          className="flex-1 px-2 py-1 rounded border border-violet-300 text-sm text-black"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => saveRename(s.id)}
+                          className="px-2 py-1 bg-emerald-500 text-white rounded text-xs font-bold"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditingSessionId(null)}
+                          className="px-2 py-1 bg-gray-300 text-gray-700 rounded text-xs font-bold"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => catalogCount > 0 ? loadSession(s.id) : showToast('Upload products first!')}
+                        className="cursor-pointer"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="font-semibold text-gray-800">{s.name}</div>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={(e) => startRenaming(s, e)}
+                              className="p-1 text-gray-400 hover:text-violet-600 transition-colors"
+                              title="Rename"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              onClick={(e) => deleteSession(s.id, e)}
+                              className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                              title="Delete"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {s._count?.answers || 0} answered • {new Date(s.updatedAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
 
             <button
-              onClick={() => createSession('Session ' + new Date().toLocaleDateString())}
-              className="w-full p-3 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white font-bold hover:from-fuchsia-600 hover:to-violet-600 transition-all shadow-lg"
+              onClick={() => catalogCount > 0 ? createSession('Session ' + new Date().toLocaleDateString()) : showToast('Upload products first!')}
+              className={`w-full p-3 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white font-bold transition-all shadow-lg ${catalogCount > 0 ? 'hover:from-fuchsia-600 hover:to-violet-600' : 'opacity-70'}`}
             >
               🚀 New Session
             </button>
           </div>
         </div>
+
+        {/* Catalog Manager Modal */}
+        {showCatalogManager && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-800">Product Catalog</h2>
+                <button onClick={() => setShowCatalogManager(false)} className="text-gray-400 text-2xl">×</button>
+              </div>
+
+              <p className="text-gray-600 text-sm mb-4">
+                Upload your Shopify CSV exports here. Products are stored globally and used by all sessions.
+              </p>
+
+              {catalogCount > 0 && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-4">
+                  <div className="text-emerald-800 font-medium">{catalogCount.toLocaleString()} products in catalog</div>
+                  <div className="text-emerald-600 text-xs">Uploading new CSVs will update existing products</div>
+                </div>
+              )}
+
+              <input
+                type="file"
+                multiple
+                accept=".csv"
+                onChange={e => e.target.files && uploadToCatalog(e.target.files)}
+                disabled={uploadingCatalog}
+                className="w-full text-sm file:mr-2 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-bold file:bg-fuchsia-100 file:text-fuchsia-600 hover:file:bg-fuchsia-200 file:cursor-pointer disabled:opacity-50"
+              />
+
+              {uploadingCatalog && (
+                <div className="mt-4 text-center text-violet-600 font-medium">
+                  Uploading products...
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -570,23 +835,14 @@ export default function TagQuest() {
           </div>
         )}
 
-        {/* Load Section */}
+        {/* Loading indicator if no products */}
         {products.length === 0 && (
           <div className="bg-white rounded-2xl shadow-xl p-6 text-center">
             <div className="text-5xl mb-3">📦</div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Load Products</h2>
-            <p className="text-gray-500 text-sm mb-4">
-              {questionHistory.length > 0
-                ? `${questionHistory.length} saved answers. Load CSVs to continue!`
-                : 'Upload your Shopify CSV exports'}
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Loading Products...</h2>
+            <p className="text-gray-500 text-sm">
+              Fetching from catalog
             </p>
-            <input
-              type="file"
-              multiple
-              accept=".csv"
-              onChange={e => e.target.files && loadData(e.target.files)}
-              className="text-sm file:mr-2 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-bold file:bg-fuchsia-100 file:text-fuchsia-600 hover:file:bg-fuchsia-200 file:cursor-pointer"
-            />
           </div>
         )}
 

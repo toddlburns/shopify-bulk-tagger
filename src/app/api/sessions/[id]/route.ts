@@ -33,6 +33,15 @@ export async function PUT(
   const { id } = await params;
   const body = await request.json();
 
+  // If just renaming the session
+  if (body.name !== undefined) {
+    await prisma.session.update({
+      where: { id },
+      data: { name: body.name }
+    });
+    return NextResponse.json({ success: true });
+  }
+
   // Update session timestamp
   await prisma.session.update({
     where: { id },

@@ -649,26 +649,29 @@ export default function TagQuest() {
     setShowSessionPicker(false);
   };
 
-  // Sync/refresh from server
+  // Sync/refresh from server - reloads everything for this session
   const syncFromServer = async () => {
     if (!currentSession) return;
 
     setSyncing(true);
     try {
+      // Reload the full session from server
       const res = await fetch(`/api/sessions/${currentSession.id}`);
       const session: Session = await res.json();
 
-      setRules(session.rules || []);
-      setQuestionHistory((session.answers || []).map(a => ({
+      const newRules = session.rules || [];
+      const newHistory = (session.answers || []).map(a => ({
         questionId: a.questionId,
         questionText: a.questionText,
         answer: a.answer
-      })));
+      }));
 
-      // Reload certainties
+      setRules(newRules);
+      setQuestionHistory(newHistory);
+
+      // Reload certainties from products + session
       const certMap: Record<string, CertaintyData> = {};
 
-      // First, initialize from products
       for (const product of products) {
         certMap[product.handle] = { genre: {}, subgenre: {}, decade: {} };
         if (product.existingGenre) {
@@ -682,7 +685,6 @@ export default function TagQuest() {
         }
       }
 
-      // Override with saved session certainties
       for (const c of session.certainties || []) {
         if (!certMap[c.handle]) {
           certMap[c.handle] = { genre: {}, subgenre: {}, decade: {} };
@@ -694,14 +696,14 @@ export default function TagQuest() {
         };
       }
 
-      setCertainty(certMap);
-
-      // Apply saved rules
-      for (const rule of session.rules || []) {
+      // Apply rules to update certainties
+      for (const rule of newRules) {
         applyRuleToProducts(rule, vendors, certMap);
       }
 
-      showToast('Synced!');
+      setCertainty(certMap);
+
+      showToast(`Synced! ${newHistory.length} answers loaded`);
     } catch (error) {
       console.error('Sync failed:', error);
       showToast('Sync failed');

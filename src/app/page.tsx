@@ -77,6 +77,7 @@ interface Session {
 
 export default function TagQuest() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState(false);
 
@@ -106,10 +107,15 @@ export default function TagQuest() {
 
   // Check for saved authentication
   useEffect(() => {
-    const saved = localStorage.getItem('tagquest_auth');
-    if (saved === 'true') {
-      setIsAuthenticated(true);
+    try {
+      const saved = window.localStorage.getItem('tagquest_auth');
+      if (saved === 'true') {
+        setIsAuthenticated(true);
+      }
+    } catch {
+      // localStorage not available
     }
+    setAuthChecked(true);
   }, []);
 
   useEffect(() => {
@@ -130,12 +136,28 @@ export default function TagQuest() {
   const handleLogin = () => {
     if (passwordInput === APP_PASSWORD) {
       setIsAuthenticated(true);
-      localStorage.setItem('tagquest_auth', 'true');
+      try {
+        window.localStorage.setItem('tagquest_auth', 'true');
+      } catch {
+        // localStorage not available
+      }
       setPasswordError(false);
     } else {
       setPasswordError(true);
     }
   };
+
+  // Loading screen
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-fuchsia-600 via-violet-600 to-indigo-700 flex items-center justify-center">
+        <div className="text-white text-center">
+          <div className="text-5xl mb-4">🏷️</div>
+          <div className="animate-pulse">Loading...</div>
+        </div>
+      </div>
+    );
+  }
 
   // Password screen
   if (!isAuthenticated) {

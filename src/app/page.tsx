@@ -739,27 +739,30 @@ export default function TagQuest() {
       }
     }
 
-    await fetch(`/api/sessions/${currentSession.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        rules,
-        answers: questionHistory,
-        certainties: certArray,
-        products: products.map(p => ({
-          handle: p.handle,
-          title: p.title,
-          vendor: p.vendor,
-          existingGenre: p.existingGenre,
-          existingSubgenre: p.existingSubgenre,
-          existingDecade: p.existingDecade
-        }))
-      })
-    });
+    // Don't send products - they're in the global catalog now
+    try {
+      const res = await fetch(`/api/sessions/${currentSession.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rules,
+          answers: questionHistory,
+          certainties: certArray
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error('Save failed');
+      }
+
+      setLastSaved(new Date());
+      showToast(`Saved! ${questionHistory.length} answers`);
+    } catch (error) {
+      console.error('Save failed:', error);
+      showToast('Save failed!');
+    }
 
     setSaving(false);
-    setLastSaved(new Date());
-    showToast('Synced!');
   };
 
   const showToast = (message: string) => {

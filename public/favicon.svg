@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#00ffff;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#ff00ff;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#8b00ff;stop-opacity:0" />
+    </radialGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8" />
+    </filter>
+  </defs>
+  <!-- Outer glow -->
+  <circle cx="50" cy="50" r="45" fill="url(#glow)" filter="url(#blur)" />
+  <!-- Inner bright orb -->
+  <circle cx="50" cy="50" r="25" fill="#00ffff" />
+  <circle cx="50" cy="50" r="20" fill="#ffffff" opacity="0.6" />
+  <circle cx="42" cy="42" r="8" fill="#ffffff" opacity="0.8" />
+</svg>

@@ -119,6 +119,19 @@ export default function TagQuest() {
   } | null>(null);
   const [analyzingQuestion, setAnalyzingQuestion] = useState(false);
   const [showDataExplorer, setShowDataExplorer] = useState(false);
+  const [showMetaQuestions, setShowMetaQuestions] = useState(false);
+  const [selectedMetaQuestion, setSelectedMetaQuestion] = useState<{
+    type: 'genre' | 'decade';
+    value: string;
+    vendors: string[];
+    totalProducts: number;
+  } | null>(null);
+  const [verifyingMeta, setVerifyingMeta] = useState(false);
+  const [metaVerification, setMetaVerification] = useState<Record<string, {
+    confirmed: boolean;
+    discogsGenre?: string;
+    confidence?: number;
+  }>>({});
 
   // Check for saved authentication
   useEffect(() => {
@@ -933,6 +946,152 @@ export default function TagQuest() {
     setAnalyzingQuestion(false);
   };
 
+  // Get grouped meta-questions
+  const getMetaQuestions = () => {
+    const genreGroups: Record<string, { vendors: string[]; totalProducts: number }> = {};
+    const decadeGroups: Record<string, { vendors: string[]; totalProducts: number }> = {};
+
+    for (const q of questions) {
+      const vendorData = vendors[q.vendor];
+      const productCount = vendorData?.products.length || 0;
+
+      if (q.type.includes('genre')) {
+        if (!genreGroups[q.suggestedValue]) {
+          genreGroups[q.suggestedValue] = { vendors: [], totalProducts: 0 };
+        }
+        genreGroups[q.suggestedValue].vendors.push(q.vendor);
+        genreGroups[q.suggestedValue].totalProducts += productCount;
+      } else {
+        if (!decadeGroups[q.suggestedValue]) {
+          decadeGroups[q.suggestedValue] = { vendors: [], totalProducts: 0 };
+        }
+        decadeGroups[q.suggestedValue].vendors.push(q.vendor);
+        decadeGroups[q.suggestedValue].totalProducts += productCount;
+      }
+    }
+
+    return {
+      genres: Object.entries(genreGroups)
+        .map(([value, data]) => ({ type: 'genre' as const, value, ...data }))
+        .sort((a, b) => b.vendors.length - a.vendors.length),
+      decades: Object.entries(decadeGroups)
+        .map(([value, data]) => ({ type: 'decade' as const, value, ...data }))
+        .sort((a, b) => b.vendors.length - a.vendors.length),
+    };
+  };
+
+  // Verify meta-question with Discogs (sample vendors)
+  const verifyMetaWithDiscogs = async (meta: { type: 'genre' | 'decade'; value: string; vendors: string[] }) => {
+    setVerifyingMeta(true);
+    setMetaVerification({});
+
+    const results: Record<string, { confirmed: boolean; discogsGenre?: string; confidence?: number }> = {};
+
+    // Sample up to 5 vendors
+    const sampleVendors = meta.vendors.slice(0, 5);
+
+    for (const vendor of sampleVendors) {
+      const vendorData = vendors[vendor];
+      if (!vendorData) continue;
+
+      try {
+        const sampleProducts = vendorData.products.slice(0, 3);
+        const res = await fetch('/api/discogs', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vendor,
+            products: sampleProducts.map(p => ({ handle: p.handle, title: p.title })),
+            suggestedGenre: meta.type === 'genre' ? meta.value : undefined,
+            suggestedDecade: meta.type === 'decade' ? meta.value : undefined,
+          })
+        });
+
+        const analysis = await res.json();
+
+        if (meta.type === 'genre') {
+          results[vendor] = {
+            confirmed: (analysis.genreAnalysis?.confidence || 0) > 0,
+            discogsGenre: analysis.genreAnalysis?.topGenre,
+            confidence: analysis.genreAnalysis?.confidence,
+          };
+        } else {
+          results[vendor] = {
+            confirmed: (analysis.decadeAnalysis?.confidence || 0) > 0,
+            discogsGenre: analysis.decadeAnalysis?.topDecade,
+            confidence: analysis.decadeAnalysis?.confidence,
+          };
+        }
+      } catch (error) {
+        console.error(`Failed to verify ${vendor}:`, error);
+        results[vendor] = { confirmed: false };
+      }
+    }
+
+    setMetaVerification(results);
+    setVerifyingMeta(false);
+  };
+
+  // Apply meta-question answer to all vendors
+  const answerMetaQuestion = (answer: 'yes' | 'no' | 'skip') => {
+    if (!selectedMetaQuestion) return;
+
+    const { type, value, vendors: metaVendors } = selectedMetaQuestion;
+    const tagType = type === 'genre' ? 'genre' : 'decade';
+    const newHistory = [...questionHistory];
+    const newRules = [...rules];
+    const newCertainty = { ...certainty };
+
+    for (const vendor of metaVendors) {
+      const questionId = `vendor-${type}-${vendor}`;
+
+      // Add to history
+      newHistory.push({
+        questionId,
+        questionText: `Should all "${vendor}" products be "${value}"?`,
+        answer,
+      });
+
+      // If yes, create rule and apply
+      if (answer === 'yes') {
+        const vendorData = vendors[vendor];
+        if (!vendorData) continue;
+
+        // Calculate existing percentage
+        const existingCount = type === 'genre'
+          ? vendorData.existingGenres[value] || 0
+          : vendorData.existingDecades[value] || 0;
+        const existingPct = Math.round(100 * existingCount / vendorData.products.length);
+
+        const rule: Rule = {
+          type: `vendor-${type}`,
+          vendor,
+          tagType,
+          value,
+          certaintyPct: Math.min(95, existingPct + 10),
+          reason: 'User confirmed (meta-question)'
+        };
+
+        newRules.push(rule);
+        applyRuleToProducts(rule, vendors, newCertainty);
+      }
+    }
+
+    setQuestionHistory(newHistory);
+    setRules(newRules);
+    setCertainty(newCertainty);
+
+    // Remove answered questions from queue
+    const answeredIds = new Set(metaVendors.map(v => `vendor-${type}-${v}`));
+    setQuestions(prev => prev.filter(q => !answeredIds.has(q.id)));
+
+    // Close modal and save
+    setSelectedMetaQuestion(null);
+    setMetaVerification({});
+    showToast(`Applied to ${metaVendors.length} vendors!`);
+    setTimeout(() => saveProgress(), 100);
+  };
+
   const getStats = () => {
     let high = 0, medium = 0, low = 0;
 
@@ -1223,6 +1382,13 @@ export default function TagQuest() {
               title="Sync from server"
             >
               <span className={syncing ? 'animate-spin inline-block' : ''}>🔄</span>
+            </button>
+            <button
+              onClick={() => setShowMetaQuestions(true)}
+              className="p-2 text-white/70 hover:text-white active:scale-95 transition-all"
+              title="Meta questions"
+            >
+              ⚡
             </button>
             <button
               onClick={() => setShowDataExplorer(true)}
@@ -1849,6 +2015,205 @@ export default function TagQuest() {
                 className="w-full bg-violet-500 text-white py-3 rounded-xl font-bold active:scale-95 transition-all"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Meta Questions Modal */}
+      {showMetaQuestions && (
+        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center sm:p-4 z-50">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[90vh] sm:max-h-[85vh] overflow-hidden">
+            <div className="p-4 border-b bg-gradient-to-r from-amber-500 to-orange-500">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-xl font-bold text-white">⚡ Meta Questions</h2>
+                  <p className="text-white/80 text-sm">Answer once, apply to many vendors</p>
+                </div>
+                <button onClick={() => setShowMetaQuestions(false)} className="p-2 text-white/70 text-2xl">×</button>
+              </div>
+            </div>
+
+            <div className="p-4 overflow-y-auto max-h-[60vh]">
+              {(() => {
+                const meta = getMetaQuestions();
+                const allMeta = [...meta.genres, ...meta.decades].filter(m => m.vendors.length > 1);
+
+                if (allMeta.length === 0) {
+                  return (
+                    <div className="text-center py-8">
+                      <div className="text-4xl mb-2">🎯</div>
+                      <p className="text-gray-500">No meta-questions available</p>
+                      <p className="text-gray-400 text-sm">All remaining questions are unique</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-3">
+                    {allMeta.map((m) => (
+                      <button
+                        key={`${m.type}-${m.value}`}
+                        onClick={() => {
+                          setSelectedMetaQuestion(m);
+                          setMetaVerification({});
+                        }}
+                        className={`w-full p-4 rounded-xl border-2 text-left transition-all active:scale-[0.98] ${
+                          m.type === 'genre'
+                            ? 'border-emerald-200 bg-emerald-50 hover:border-emerald-400'
+                            : 'border-blue-200 bg-blue-50 hover:border-blue-400'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className={`text-sm font-bold ${m.type === 'genre' ? 'text-emerald-800' : 'text-blue-800'}`}>
+                              {m.type === 'genre' ? '🎵' : '📅'} All &quot;{m.value}&quot; vendors
+                            </div>
+                            <div className="text-gray-600 text-sm mt-1">
+                              {m.vendors.length} vendors • {m.totalProducts.toLocaleString()} products
+                            </div>
+                          </div>
+                          <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                            m.type === 'genre' ? 'bg-emerald-200 text-emerald-800' : 'bg-blue-200 text-blue-800'
+                          }`}>
+                            {m.vendors.length}x faster
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="p-4 border-t pb-safe">
+              <button
+                onClick={() => setShowMetaQuestions(false)}
+                className="w-full bg-gray-100 text-gray-600 py-3 rounded-xl font-bold active:scale-95 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Selected Meta Question Detail */}
+      {selectedMetaQuestion && (
+        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center sm:p-4 z-50">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg max-h-[90vh] sm:max-h-[85vh] overflow-hidden">
+            <div className={`p-4 border-b ${
+              selectedMetaQuestion.type === 'genre'
+                ? 'bg-gradient-to-r from-emerald-500 to-green-500'
+                : 'bg-gradient-to-r from-blue-500 to-indigo-500'
+            }`}>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    {selectedMetaQuestion.type === 'genre' ? '🎵' : '📅'} Tag as &quot;{selectedMetaQuestion.value}&quot;?
+                  </h2>
+                  <p className="text-white/80 text-sm">
+                    {selectedMetaQuestion.vendors.length} vendors • {selectedMetaQuestion.totalProducts.toLocaleString()} products
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedMetaQuestion(null);
+                    setMetaVerification({});
+                  }}
+                  className="p-2 text-white/70 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 overflow-y-auto max-h-[45vh]">
+              {/* Verify with Discogs */}
+              <button
+                onClick={() => verifyMetaWithDiscogs(selectedMetaQuestion)}
+                disabled={verifyingMeta}
+                className="w-full mb-4 p-3 bg-gradient-to-r from-orange-400 to-amber-500 text-white rounded-xl font-bold text-sm active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {verifyingMeta ? (
+                  <>
+                    <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    Verifying with Discogs...
+                  </>
+                ) : (
+                  <>🎵 Verify with Discogs (sample 5 vendors)</>
+                )}
+              </button>
+
+              {/* Verification Results */}
+              {Object.keys(metaVerification).length > 0 && (
+                <div className="mb-4 p-3 bg-gray-50 rounded-xl">
+                  <h3 className="font-bold text-gray-800 text-sm mb-2">Discogs Verification:</h3>
+                  <div className="space-y-2">
+                    {Object.entries(metaVerification).map(([vendor, result]) => (
+                      <div key={vendor} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-700 truncate flex-1 mr-2">{vendor}</span>
+                        {result.confirmed ? (
+                          <span className="text-emerald-600 font-medium">✓ Confirmed</span>
+                        ) : result.discogsGenre ? (
+                          <span className="text-amber-600 font-medium">⚠️ {result.discogsGenre}</span>
+                        ) : (
+                          <span className="text-gray-400">? No data</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {(() => {
+                    const confirmed = Object.values(metaVerification).filter(v => v.confirmed).length;
+                    const total = Object.keys(metaVerification).length;
+                    return (
+                      <div className={`mt-2 text-sm font-medium ${
+                        confirmed === total ? 'text-emerald-600' :
+                        confirmed > total / 2 ? 'text-amber-600' : 'text-red-600'
+                      }`}>
+                        {confirmed}/{total} vendors confirmed by Discogs
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Vendor List */}
+              <details className="mb-4">
+                <summary className="cursor-pointer font-bold text-gray-800 text-sm">
+                  📋 All {selectedMetaQuestion.vendors.length} vendors
+                </summary>
+                <div className="mt-2 bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto">
+                  {selectedMetaQuestion.vendors.map(v => (
+                    <div key={v} className="py-1 border-b border-gray-100 last:border-0 text-sm text-gray-700">
+                      {v}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </div>
+
+            <div className="p-4 border-t bg-gray-50 pb-safe">
+              <div className="flex gap-3 mb-3">
+                <button
+                  onClick={() => answerMetaQuestion('yes')}
+                  className="flex-1 bg-gradient-to-r from-emerald-400 to-green-500 text-white py-4 rounded-xl font-bold text-lg active:scale-95 transition-transform shadow-lg"
+                >
+                  👍 YES to all
+                </button>
+                <button
+                  onClick={() => answerMetaQuestion('no')}
+                  className="flex-1 bg-gradient-to-r from-rose-400 to-red-500 text-white py-4 rounded-xl font-bold text-lg active:scale-95 transition-transform shadow-lg"
+                >
+                  👎 NO to all
+                </button>
+              </div>
+              <button
+                onClick={() => answerMetaQuestion('skip')}
+                className="w-full py-3 bg-gray-100 text-gray-600 rounded-xl font-medium text-sm active:scale-95 transition-all border-2 border-dashed border-gray-300"
+              >
+                🤔 Skip all for now
               </button>
             </div>
           </div>

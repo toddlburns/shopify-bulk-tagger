@@ -104,6 +104,8 @@ export default function TagQuest() {
   const [uploadProgress, setUploadProgress] = useState({ stage: '', current: 0, total: 0 });
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [showCheckpoint, setShowCheckpoint] = useState(false);
+  const [checkpointNotes, setCheckpointNotes] = useState('');
 
   // Check for saved authentication
   useEffect(() => {
@@ -430,6 +432,7 @@ export default function TagQuest() {
     return result;
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const loadData = async (files: FileList) => {
     const newProducts: Product[] = [];
     const newVendors: Record<string, VendorData> = {};
@@ -541,6 +544,13 @@ export default function TagQuest() {
     setCurrentSession(session);
     setShowSessionPicker(false);
 
+    // Save to localStorage for review page access
+    try {
+      localStorage.setItem('tagquest_current_session', JSON.stringify({ id: session.id, name: session.name }));
+    } catch {
+      // localStorage not available
+    }
+
     // Auto-load products from catalog
     await loadCatalogProducts();
   };
@@ -587,6 +597,13 @@ export default function TagQuest() {
       questionText: a.questionText,
       answer: a.answer
     })));
+
+    // Save to localStorage for review page access
+    try {
+      localStorage.setItem('tagquest_current_session', JSON.stringify({ id: session.id, name: session.name }));
+    } catch {
+      // localStorage not available
+    }
 
     // Load products from global catalog
     const catalogRes = await fetch('/api/products');
@@ -805,9 +822,21 @@ export default function TagQuest() {
       setCertainty(newCertainty);
     }
 
-    setCurrentQuestionIndex(prev => prev + 1);
     setDetailedAnswer('');
-    setTimeout(() => saveProgress(), 100);
+
+    // Check if we've hit a checkpoint (every 10 questions)
+    if ((newHistory.length) % 10 === 0) {
+      setShowCheckpoint(true);
+      setTimeout(() => saveProgress(), 100);
+    } else {
+      setCurrentQuestionIndex(prev => prev + 1);
+      setTimeout(() => saveProgress(), 100);
+    }
+  };
+
+  const continueAfterCheckpoint = () => {
+    setShowCheckpoint(false);
+    setCurrentQuestionIndex(prev => prev + 1);
   };
 
   const getAffectedProducts = (): Product[] => {
@@ -838,11 +867,61 @@ export default function TagQuest() {
     return { high, medium, low, pct };
   };
 
+  const getDetailedStats = () => {
+    const stats = {
+      genre: { total: products.length, certain: 0, high: 0, medium: 0, low: 0, none: 0 },
+      decade: { total: products.length, certain: 0, high: 0, medium: 0, low: 0, none: 0 },
+      overall: { questionsRemaining: questions.length, questionsAnswered: questionHistory.length }
+    };
+
+    for (const product of products) {
+      const c = certainty[product.handle];
+
+      // Genre stats
+      const genreVal = c?.genre as CertaintyValue | undefined;
+      const genrePct = genreVal?.pct || 0;
+      if (genrePct === 100) stats.genre.certain++;
+      else if (genrePct >= 80) stats.genre.high++;
+      else if (genrePct >= 50) stats.genre.medium++;
+      else if (genrePct > 0) stats.genre.low++;
+      else stats.genre.none++;
+
+      // Decade stats
+      const decadeVal = c?.decade as CertaintyValue | undefined;
+      const decadePct = decadeVal?.pct || 0;
+      if (decadePct === 100) stats.decade.certain++;
+      else if (decadePct >= 80) stats.decade.high++;
+      else if (decadePct >= 50) stats.decade.medium++;
+      else if (decadePct > 0) stats.decade.low++;
+      else stats.decade.none++;
+    }
+
+    return stats;
+  };
+
   const stats = getStats();
+  const detailedStats = getDetailedStats();
   const currentQuestion = questions[currentQuestionIndex];
   const affectedProducts = getAffectedProducts();
-  const withGenre = products.filter(p => p.existingGenre).length;
-  const withDecade = products.filter(p => p.existingDecade).length;
+
+  // Calculate progress percentages
+  const genreProgress = products.length > 0
+    ? Math.round(100 * (detailedStats.genre.certain + detailedStats.genre.high) / products.length)
+    : 0;
+  const decadeProgress = products.length > 0
+    ? Math.round(100 * (detailedStats.decade.certain + detailedStats.decade.high) / products.length)
+    : 0;
+
+  // Get last 10 answers for checkpoint
+  const getLastTenAnswers = () => {
+    const start = Math.max(0, questionHistory.length - 10);
+    return questionHistory.slice(start);
+  };
+
+  // Check if answer is detailed (not just yes/no)
+  const isDetailedAnswer = (answer: string) => {
+    return answer !== 'yes' && answer !== 'no';
+  };
 
   // Session picker
   if (showSessionPicker) {
@@ -1071,22 +1150,62 @@ export default function TagQuest() {
           </div>
         </div>
 
-        {/* Stats */}
+        {/* Progress to 100% */}
         {products.length > 0 && (
-          <div className="bg-white/20 backdrop-blur rounded-xl p-3 mb-3">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="flex-1 bg-white/30 rounded-full h-3 overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-xl p-4 mb-3">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-gray-800 text-sm uppercase tracking-wide">Progress to 100%</h3>
+              <button
+                onClick={() => window.location.href = '/review'}
+                className="text-violet-600 text-xs font-medium hover:underline"
+              >
+                Review Answers
+              </button>
+            </div>
+
+            {/* Genre Progress */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-medium text-gray-700">Genres</span>
+                <span className="text-sm font-bold text-emerald-600">{genreProgress}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-yellow-400 to-emerald-400 transition-all"
-                  style={{ width: `${stats.pct}%` }}
+                  className="h-full bg-gradient-to-r from-emerald-400 to-green-500 transition-all duration-300"
+                  style={{ width: `${genreProgress}%` }}
                 />
               </div>
-              <span className="text-white font-bold text-sm">{stats.pct}%</span>
+              <div className="flex gap-3 mt-1 text-xs text-gray-500">
+                <span className="text-emerald-600">● 100%: {detailedStats.genre.certain.toLocaleString()}</span>
+                <span className="text-yellow-600">● 80-99%: {detailedStats.genre.high.toLocaleString()}</span>
+                <span className="text-gray-400">● Needs work: {(detailedStats.genre.medium + detailedStats.genre.low + detailedStats.genre.none).toLocaleString()}</span>
+              </div>
             </div>
-            <div className="flex justify-between text-xs text-white/80">
-              <span>🎯 {questionHistory.length} answered</span>
-              <span>📦 {products.length} products</span>
-              <span>✅ {stats.high} done</span>
+
+            {/* Decade Progress */}
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-medium text-gray-700">Decades</span>
+                <span className="text-sm font-bold text-blue-600">{decadeProgress}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-400 to-indigo-500 transition-all duration-300"
+                  style={{ width: `${decadeProgress}%` }}
+                />
+              </div>
+              <div className="flex gap-3 mt-1 text-xs text-gray-500">
+                <span className="text-blue-600">● 100%: {detailedStats.decade.certain.toLocaleString()}</span>
+                <span className="text-yellow-600">● 80-99%: {detailedStats.decade.high.toLocaleString()}</span>
+                <span className="text-gray-400">● Needs work: {(detailedStats.decade.medium + detailedStats.decade.low + detailedStats.decade.none).toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Questions summary */}
+            <div className="pt-3 border-t border-gray-100">
+              <div className="text-sm text-gray-600">
+                <span className="font-medium">{questionHistory.length}</span> answered, <span className="font-medium">{questions.length}</span> to go
+              </div>
             </div>
           </div>
         )}
@@ -1102,25 +1221,6 @@ export default function TagQuest() {
           </div>
         )}
 
-        {/* Summary */}
-        {products.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-xl p-4 mb-3">
-            <div className="flex gap-3">
-              <div className="flex-1 bg-emerald-50 rounded-xl p-3 text-center">
-                <div className="text-2xl font-black text-emerald-600">
-                  {Math.round(100 * withGenre / products.length)}%
-                </div>
-                <div className="text-xs text-gray-500">genres</div>
-              </div>
-              <div className="flex-1 bg-blue-50 rounded-xl p-3 text-center">
-                <div className="text-2xl font-black text-blue-600">
-                  {Math.round(100 * withDecade / products.length)}%
-                </div>
-                <div className="text-xs text-gray-500">decades</div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Question */}
         {products.length > 0 && currentQuestion && (
@@ -1275,6 +1375,123 @@ export default function TagQuest() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Checkpoint Modal - Every 10 Questions */}
+      {showCheckpoint && (
+        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center sm:p-4 z-50">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg max-h-[90vh] sm:max-h-[85vh] overflow-hidden">
+            <div className="p-4 border-b bg-gradient-to-r from-fuchsia-500 to-violet-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white">🎯 Checkpoint!</h2>
+                  <p className="text-white/80 text-sm">{questionHistory.length} questions answered</p>
+                </div>
+                <div className="text-4xl">🏆</div>
+              </div>
+            </div>
+
+            <div className="p-4 overflow-y-auto max-h-[45vh]">
+              {/* Progress Snapshot */}
+              <div className="bg-gray-50 rounded-xl p-3 mb-4">
+                <h3 className="font-bold text-gray-800 text-sm mb-2">Progress Snapshot</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-white rounded-lg p-2 text-center">
+                    <div className="text-lg font-bold text-emerald-600">{genreProgress}%</div>
+                    <div className="text-xs text-gray-500">Genres</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 text-center">
+                    <div className="text-lg font-bold text-blue-600">{decadeProgress}%</div>
+                    <div className="text-xs text-gray-500">Decades</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 text-center">
+                    <div className="text-lg font-bold text-violet-600">{rules.length}</div>
+                    <div className="text-xs text-gray-500">Rules Created</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 text-center">
+                    <div className="text-lg font-bold text-amber-600">{stats.high.toLocaleString()}</div>
+                    <div className="text-xs text-gray-500">Products Tagged</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Last 10 Answers */}
+              <div className="mb-4">
+                <h3 className="font-bold text-gray-800 text-sm mb-2">Last 10 Answers</h3>
+                <div className="space-y-2">
+                  {getLastTenAnswers().map((answer, idx) => (
+                    <div
+                      key={answer.questionId}
+                      className={`p-3 rounded-lg border ${
+                        isDetailedAnswer(answer.answer)
+                          ? 'bg-amber-50 border-amber-200'
+                          : answer.answer === 'yes'
+                          ? 'bg-emerald-50 border-emerald-200'
+                          : 'bg-gray-50 border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="text-xs font-bold text-gray-400">
+                          #{questionHistory.length - getLastTenAnswers().length + idx + 1}
+                        </span>
+                        <div className="flex-1">
+                          <div className="text-sm text-gray-800">{answer.questionText}</div>
+                          <div className={`text-xs font-medium mt-1 ${
+                            isDetailedAnswer(answer.answer)
+                              ? 'text-amber-600'
+                              : answer.answer === 'yes'
+                              ? 'text-emerald-600'
+                              : 'text-gray-500'
+                          }`}>
+                            {isDetailedAnswer(answer.answer) ? (
+                              <span>📝 {answer.answer}</span>
+                            ) : answer.answer === 'yes' ? (
+                              <span>✓ Yes</span>
+                            ) : (
+                              <span>✗ No</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notes for Later */}
+              <div>
+                <h3 className="font-bold text-gray-800 text-sm mb-2">Notes for Later</h3>
+                <textarea
+                  value={checkpointNotes}
+                  onChange={e => setCheckpointNotes(e.target.value)}
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-lg p-3 text-sm text-black placeholder-gray-400"
+                  placeholder="Jot down thoughts about API integrations (Discogs/MusicBrainz), edge cases, or things to revisit..."
+                />
+              </div>
+            </div>
+
+            <div className="p-4 border-t bg-gray-50 pb-safe">
+              <div className="flex gap-3">
+                <button
+                  onClick={continueAfterCheckpoint}
+                  className="flex-1 bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white py-4 sm:py-3 rounded-xl font-bold text-base active:scale-95 transition-all touch-manipulation"
+                >
+                  Continue Answering
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCheckpoint(false);
+                    window.location.href = '/review';
+                  }}
+                  className="flex-1 bg-white border-2 border-violet-500 text-violet-600 py-4 sm:py-3 rounded-xl font-bold text-base active:scale-95 transition-all touch-manipulation"
+                >
+                  Review Answers
+                </button>
+              </div>
             </div>
           </div>
         </div>

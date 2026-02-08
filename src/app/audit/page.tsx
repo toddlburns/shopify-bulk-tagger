@@ -552,43 +552,43 @@ export default function AuditPage() {
             <div className="space-y-4">
               {verificationSample.map(p => (
                 <div key={p.handle} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex justify-between items-start mb-3">
+                  <div className="flex justify-between items-start mb-4">
                     <div>
-                      <div className="font-medium text-gray-900">{p.title}</div>
-                      <div className="text-gray-500 text-sm">{p.vendor} • {p.handle}</div>
+                      <div className="text-lg font-semibold text-gray-900">{p.title}</div>
+                      <div className="text-gray-500 text-base mt-1">{p.vendor} • <span className="text-gray-400">{p.handle}</span></div>
                     </div>
-                    <div className="flex gap-2">
-                      {p.hasGenre && <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs">Genre ✓</span>}
-                      {p.hasSubgenre && <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">Subgenre ✓</span>}
-                      {p.hasDecade && <span className="px-2 py-1 bg-violet-100 text-violet-700 rounded text-xs">Decade ✓</span>}
-                      {!p.hasGenre && <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">No Genre</span>}
-                      {!p.hasSubgenre && <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">No Subgenre</span>}
-                      {!p.hasDecade && <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">No Decade</span>}
+                    <div className="flex gap-2 flex-wrap justify-end">
+                      {p.hasGenre && <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium">Genre ✓</span>}
+                      {p.hasSubgenre && <span className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium">Subgenre ✓</span>}
+                      {p.hasDecade && <span className="px-3 py-1.5 bg-violet-100 text-violet-700 rounded-lg text-sm font-medium">Decade ✓</span>}
+                      {!p.hasGenre && <span className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-sm font-medium">No Genre</span>}
+                      {!p.hasSubgenre && <span className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-sm font-medium">No Subgenre</span>}
+                      {!p.hasDecade && <span className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-sm font-medium">No Decade</span>}
                     </div>
                   </div>
 
-                  <div className="bg-gray-50 rounded p-3 mb-3">
-                    <div className="text-xs text-gray-500 mb-1">Raw Tags:</div>
-                    <div className="text-sm text-gray-700 font-mono">{p.tags || '(empty)'}</div>
+                  <div className="bg-gray-100 rounded-lg p-4 mb-4">
+                    <div className="text-sm text-gray-500 mb-2 font-medium">Raw Tags:</div>
+                    <div className="text-base text-gray-800 leading-relaxed break-words">{p.tags || '(empty)'}</div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 text-sm">
-                    <div>
-                      <span className="text-gray-500">Parsed Genre:</span>
-                      <span className="ml-2 font-medium">{p.parsedGenre || '—'}</span>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-emerald-50 rounded-lg p-3">
+                      <div className="text-sm text-emerald-600 font-medium mb-1">Parsed Genre</div>
+                      <div className="text-lg font-semibold text-gray-900">{p.parsedGenre || '—'}</div>
                     </div>
-                    <div>
-                      <span className="text-gray-500">Parsed Subgenre:</span>
-                      <span className="ml-2 font-medium">{p.parsedSubgenre || '—'}</span>
+                    <div className="bg-blue-50 rounded-lg p-3">
+                      <div className="text-sm text-blue-600 font-medium mb-1">Parsed Subgenre</div>
+                      <div className="text-lg font-semibold text-gray-900">{p.parsedSubgenre || '—'}</div>
                     </div>
-                    <div>
-                      <span className="text-gray-500">Parsed Decade:</span>
-                      <span className="ml-2 font-medium">{p.parsedDecade || '—'}</span>
+                    <div className="bg-violet-50 rounded-lg p-3">
+                      <div className="text-sm text-violet-600 font-medium mb-1">Parsed Decade</div>
+                      <div className="text-lg font-semibold text-gray-900">{p.parsedDecade || '—'}</div>
                     </div>
                   </div>
 
                   {p.parsingNotes.length > 0 && (
-                    <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-xs">
+                    <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-base">
                       ⚠️ {p.parsingNotes.join(', ')}
                     </div>
                   )}

@@ -25,7 +25,7 @@ interface Session {
   answers?: Answer[];
 }
 
-type FilterType = 'all' | 'yes' | 'no' | 'detailed';
+type FilterType = 'all' | 'yes' | 'no' | 'detailed' | 'skip';
 
 export default function ReviewPage() {
   const [session, setSession] = useState<Session | null>(null);
@@ -71,7 +71,7 @@ export default function ReviewPage() {
   };
 
   const isDetailedAnswer = (answer: string) => {
-    return answer !== 'yes' && answer !== 'no';
+    return answer !== 'yes' && answer !== 'no' && answer !== 'skip';
   };
 
   const filteredAnswers = answers.filter(a => {
@@ -80,6 +80,8 @@ export default function ReviewPage() {
         return a.answer === 'yes';
       case 'no':
         return a.answer === 'no';
+      case 'skip':
+        return a.answer === 'skip';
       case 'detailed':
         return isDetailedAnswer(a.answer);
       default:
@@ -243,7 +245,7 @@ export default function ReviewPage() {
 
         {/* Filter Bar */}
         <div className="bg-white rounded-xl p-2 mb-4 flex gap-2 overflow-x-auto">
-          {(['all', 'yes', 'no', 'detailed'] as FilterType[]).map(f => (
+          {(['all', 'yes', 'no', 'skip', 'detailed'] as FilterType[]).map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -256,6 +258,7 @@ export default function ReviewPage() {
               {f === 'all' && `All (${answers.length})`}
               {f === 'yes' && `Yes (${answers.filter(a => a.answer === 'yes').length})`}
               {f === 'no' && `No (${answers.filter(a => a.answer === 'no').length})`}
+              {f === 'skip' && `Skipped (${answers.filter(a => a.answer === 'skip').length})`}
               {f === 'detailed' && `Detailed (${answers.filter(a => isDetailedAnswer(a.answer)).length})`}
             </button>
           ))}
@@ -276,7 +279,9 @@ export default function ReviewPage() {
                   <div
                     key={answer.questionId}
                     className={`p-4 hover:bg-gray-50 transition-colors ${
-                      isDetailedAnswer(answer.answer)
+                      answer.answer === 'skip'
+                        ? 'bg-orange-50/50'
+                        : isDetailedAnswer(answer.answer)
                         ? 'bg-amber-50/50'
                         : answer.answer === 'yes'
                         ? 'bg-emerald-50/50'
@@ -291,13 +296,17 @@ export default function ReviewPage() {
                         <p className="text-gray-800 font-medium">{answer.questionText}</p>
                         <div className="mt-2 flex items-center gap-2">
                           <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                            isDetailedAnswer(answer.answer)
+                            answer.answer === 'skip'
+                              ? 'bg-orange-100 text-orange-700'
+                              : isDetailedAnswer(answer.answer)
                               ? 'bg-amber-100 text-amber-700'
                               : answer.answer === 'yes'
                               ? 'bg-emerald-100 text-emerald-700'
                               : 'bg-gray-100 text-gray-600'
                           }`}>
-                            {isDetailedAnswer(answer.answer) ? (
+                            {answer.answer === 'skip' ? (
+                              <>🤔 Skipped</>
+                            ) : isDetailedAnswer(answer.answer) ? (
                               <>📝 {answer.answer}</>
                             ) : answer.answer === 'yes' ? (
                               <>✓ Yes</>

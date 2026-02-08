@@ -118,6 +118,7 @@ export default function TagQuest() {
     styleAnalysis?: { topStyle: string | null };
   } | null>(null);
   const [analyzingQuestion, setAnalyzingQuestion] = useState(false);
+  const [showDataExplorer, setShowDataExplorer] = useState(false);
 
   // Check for saved authentication
   useEffect(() => {
@@ -799,7 +800,7 @@ export default function TagQuest() {
     setTimeout(() => setToast(null), 2000);
   };
 
-  const answerQuestion = (type: 'yes' | 'no' | 'detailed') => {
+  const answerQuestion = (type: 'yes' | 'no' | 'detailed' | 'skip') => {
     const q = questions[currentQuestionIndex];
     if (!q) return;
 
@@ -816,6 +817,7 @@ export default function TagQuest() {
     }];
     setQuestionHistory(newHistory);
 
+    // Skip doesn't create rules, just moves to next question
     if (type === 'yes') {
       const rule: Rule = {
         type: q.type,
@@ -1223,6 +1225,13 @@ export default function TagQuest() {
               <span className={syncing ? 'animate-spin inline-block' : ''}>🔄</span>
             </button>
             <button
+              onClick={() => setShowDataExplorer(true)}
+              className="p-2 text-white/70 hover:text-white active:scale-95 transition-all"
+              title="Explore data"
+            >
+              🔍
+            </button>
+            <button
               onClick={() => setShowSessionPicker(true)}
               className="px-3 py-2 text-white/70 text-xs hover:text-white bg-white/10 rounded-lg active:scale-95 transition-all"
             >
@@ -1441,7 +1450,7 @@ export default function TagQuest() {
               </div>
             </details>
 
-            <div className="flex gap-3 mb-4">
+            <div className="flex gap-3 mb-3">
               <button
                 onClick={() => answerQuestion('yes')}
                 className="flex-1 bg-gradient-to-r from-emerald-400 to-green-500 text-white py-4 sm:py-3 rounded-2xl font-bold text-xl sm:text-lg active:scale-95 hover:scale-105 transition-transform shadow-lg touch-manipulation"
@@ -1455,6 +1464,13 @@ export default function TagQuest() {
                 👎 NO
               </button>
             </div>
+
+            <button
+              onClick={() => answerQuestion('skip')}
+              className="w-full mb-4 py-3 bg-gray-100 text-gray-600 rounded-xl font-medium text-sm active:scale-95 transition-all touch-manipulation border-2 border-dashed border-gray-300"
+            >
+              🤔 I don&apos;t know (save for later)
+            </button>
 
             <details className="text-sm">
               <summary className="cursor-pointer text-gray-400 text-xs">More options...</summary>
@@ -1680,6 +1696,160 @@ export default function TagQuest() {
                   Review Answers
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Data Explorer Modal */}
+      {showDataExplorer && (
+        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center sm:p-4 z-50">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[90vh] sm:max-h-[85vh] overflow-hidden">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-bold">🔍 Data Explorer</h2>
+              <button onClick={() => setShowDataExplorer(false)} className="p-2 text-gray-400 text-2xl">×</button>
+            </div>
+
+            <div className="p-4 overflow-y-auto max-h-[70vh]">
+              {/* Summary Stats */}
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="bg-violet-50 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-violet-600">{Object.keys(vendors).length}</div>
+                  <div className="text-xs text-gray-500">Vendors</div>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-600">{products.length.toLocaleString()}</div>
+                  <div className="text-xs text-gray-500">Products</div>
+                </div>
+                <div className="bg-amber-50 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-amber-600">{questions.length}</div>
+                  <div className="text-xs text-gray-500">Questions Left</div>
+                </div>
+              </div>
+
+              {/* Suspicious Vendors */}
+              <div className="mb-4">
+                <h3 className="font-bold text-gray-800 text-sm mb-2">⚠️ Suspicious Vendor Names</h3>
+                <p className="text-xs text-gray-500 mb-2">These look like tag remnants or data issues:</p>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                  {(() => {
+                    const suspicious = Object.keys(vendors).filter(v => {
+                      const lower = v.toLowerCase();
+                      return (
+                        v.includes(':') ||
+                        v.includes('Cat:') ||
+                        v.includes('Genre') ||
+                        lower.includes('various') ||
+                        lower.includes('unknown') ||
+                        v.length < 2 ||
+                        /^\d+$/.test(v) ||
+                        /^[^a-zA-Z]*$/.test(v)
+                      );
+                    });
+
+                    if (suspicious.length === 0) {
+                      return <p className="text-gray-400 text-sm">No suspicious vendors found</p>;
+                    }
+
+                    return suspicious.map(v => (
+                      <div key={v} className="flex justify-between items-center py-1 border-b border-red-100 last:border-0">
+                        <span className="text-red-800 text-sm font-mono">{v}</span>
+                        <span className="text-red-600 text-xs">{vendors[v].products.length} products</span>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* Skipped Questions */}
+              <div className="mb-4">
+                <h3 className="font-bold text-gray-800 text-sm mb-2">🤔 Skipped Questions (Need Research)</h3>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                  {(() => {
+                    const skipped = questionHistory.filter(a => a.answer === 'skip');
+                    if (skipped.length === 0) {
+                      return <p className="text-gray-400 text-sm">No skipped questions yet</p>;
+                    }
+                    return skipped.map(q => (
+                      <div key={q.questionId} className="py-1 border-b border-gray-100 last:border-0">
+                        <span className="text-gray-700 text-sm">{q.questionText}</span>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* Question Efficiency Ideas */}
+              <div className="mb-4">
+                <h3 className="font-bold text-gray-800 text-sm mb-2">💡 Higher-Level Patterns</h3>
+                <p className="text-xs text-gray-500 mb-2">Instead of per-vendor questions, we could ask:</p>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 space-y-2 text-sm">
+                  {(() => {
+                    // Group questions by suggested value
+                    const genreGroups: Record<string, string[]> = {};
+                    const decadeGroups: Record<string, string[]> = {};
+
+                    for (const q of questions) {
+                      if (q.type.includes('genre')) {
+                        if (!genreGroups[q.suggestedValue]) genreGroups[q.suggestedValue] = [];
+                        genreGroups[q.suggestedValue].push(q.vendor);
+                      } else {
+                        if (!decadeGroups[q.suggestedValue]) decadeGroups[q.suggestedValue] = [];
+                        decadeGroups[q.suggestedValue].push(q.vendor);
+                      }
+                    }
+
+                    const topGenres = Object.entries(genreGroups)
+                      .sort((a, b) => b[1].length - a[1].length)
+                      .slice(0, 3);
+
+                    const topDecades = Object.entries(decadeGroups)
+                      .sort((a, b) => b[1].length - a[1].length)
+                      .slice(0, 3);
+
+                    return (
+                      <>
+                        {topGenres.map(([genre, vendorList]) => (
+                          <div key={genre} className="text-emerald-800">
+                            <span className="font-medium">&quot;All {vendorList.length} vendors suggesting {genre}&quot;</span>
+                            <span className="text-emerald-600 text-xs ml-2">→ 1 question instead of {vendorList.length}</span>
+                          </div>
+                        ))}
+                        {topDecades.map(([decade, vendorList]) => (
+                          <div key={decade} className="text-blue-800">
+                            <span className="font-medium">&quot;All {vendorList.length} vendors suggesting {decade}&quot;</span>
+                            <span className="text-blue-600 text-xs ml-2">→ 1 question instead of {vendorList.length}</span>
+                          </div>
+                        ))}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* All Vendors List */}
+              <details className="mb-4">
+                <summary className="font-bold text-gray-800 text-sm cursor-pointer">📋 All Vendors ({Object.keys(vendors).length})</summary>
+                <div className="mt-2 bg-gray-50 rounded-lg p-3 max-h-60 overflow-y-auto">
+                  {Object.entries(vendors)
+                    .sort((a, b) => b[1].products.length - a[1].products.length)
+                    .map(([vendor, data]) => (
+                      <div key={vendor} className="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
+                        <span className="text-gray-800 text-sm">{vendor}</span>
+                        <span className="text-gray-500 text-xs">{data.products.length} products</span>
+                      </div>
+                    ))}
+                </div>
+              </details>
+            </div>
+
+            <div className="p-4 border-t pb-safe">
+              <button
+                onClick={() => setShowDataExplorer(false)}
+                className="w-full bg-violet-500 text-white py-3 rounded-xl font-bold active:scale-95 transition-all"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

@@ -106,8 +106,18 @@ export default function TagQuest() {
   const [editingName, setEditingName] = useState('');
   const [showCheckpoint, setShowCheckpoint] = useState(false);
   const [checkpointNotes, setCheckpointNotes] = useState('');
-  const [releaseYears, setReleaseYears] = useState<Record<string, string | null>>({});
-  const [loadingYears, setLoadingYears] = useState(false);
+  const [discogsData, setDiscogsData] = useState<Record<string, {
+    year: number | null;
+    genre: string | null;
+    style: string | null;
+  }>>({});
+  const [loadingDiscogs, setLoadingDiscogs] = useState(false);
+  const [discogsAnalysis, setDiscogsAnalysis] = useState<{
+    genreAnalysis?: { topGenre: string | null; confidence: number; recommended: string | null };
+    decadeAnalysis?: { topDecade: string | null; confidence: number; recommended: string | null };
+    styleAnalysis?: { topStyle: string | null };
+  } | null>(null);
+  const [analyzingQuestion, setAnalyzingQuestion] = useState(false);
 
   // Check for saved authentication
   useEffect(() => {
@@ -825,6 +835,7 @@ export default function TagQuest() {
     }
 
     setDetailedAnswer('');
+    setDiscogsAnalysis(null); // Clear Discogs analysis for next question
 
     // Check if we've hit a checkpoint (every 10 questions)
     if ((newHistory.length) % 10 === 0) {
@@ -838,6 +849,7 @@ export default function TagQuest() {
 
   const continueAfterCheckpoint = () => {
     setShowCheckpoint(false);
+    setDiscogsAnalysis(null); // Clear Discogs analysis for next question
     setCurrentQuestionIndex(prev => prev + 1);
   };
 
@@ -852,26 +864,71 @@ export default function TagQuest() {
     return vendorData.products.filter(p => !p[tagType]);
   };
 
-  const fetchReleaseYears = async (productsToFetch: Product[]) => {
-    // Filter out products we already have years for
-    const needsFetch = productsToFetch.filter(p => releaseYears[p.handle] === undefined);
+  const fetchDiscogsData = async (productsToFetch: Product[]) => {
+    // Filter out products we already have data for
+    const needsFetch = productsToFetch.filter(p => discogsData[p.handle] === undefined);
     if (needsFetch.length === 0) return;
 
-    setLoadingYears(true);
+    setLoadingDiscogs(true);
     try {
-      const res = await fetch('/api/deezer', {
+      const res = await fetch('/api/discogs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ products: needsFetch.slice(0, 20) }) // Limit to 20 at a time
+        body: JSON.stringify({ products: needsFetch.slice(0, 10) }) // Limit to 10 (rate limits)
       });
       const data = await res.json();
       if (data.results) {
-        setReleaseYears(prev => ({ ...prev, ...data.results }));
+        setDiscogsData(prev => ({ ...prev, ...data.results }));
       }
     } catch (error) {
-      console.error('Failed to fetch release years:', error);
+      console.error('Failed to fetch Discogs data:', error);
     }
-    setLoadingYears(false);
+    setLoadingDiscogs(false);
+  };
+
+  const analyzeQuestionWithDiscogs = async () => {
+    const q = currentQuestion;
+    if (!q) return;
+
+    setAnalyzingQuestion(true);
+    setDiscogsAnalysis(null);
+
+    try {
+      const vendorProducts = affectedProducts.map(p => ({ handle: p.handle, title: p.title }));
+      const isGenreQuestion = q.type.includes('genre');
+
+      const res = await fetch('/api/discogs', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vendor: q.vendor,
+          products: vendorProducts,
+          suggestedGenre: isGenreQuestion ? q.suggestedValue : undefined,
+          suggestedDecade: !isGenreQuestion ? q.suggestedValue : undefined,
+        })
+      });
+
+      const analysis = await res.json();
+      setDiscogsAnalysis(analysis);
+
+      // Also update individual product data from the sample
+      if (analysis.products) {
+        const newData: Record<string, { year: number | null; genre: string | null; style: string | null }> = {};
+        for (const p of analysis.products) {
+          if (p.discogs) {
+            newData[p.handle] = {
+              year: p.discogs.year,
+              genre: p.discogs.genre,
+              style: p.discogs.style,
+            };
+          }
+        }
+        setDiscogsData(prev => ({ ...prev, ...newData }));
+      }
+    } catch (error) {
+      console.error('Failed to analyze with Discogs:', error);
+    }
+    setAnalyzingQuestion(false);
   };
 
   const getStats = () => {
@@ -1264,30 +1321,120 @@ export default function TagQuest() {
             <h2 className="text-lg font-bold text-black mb-2">{currentQuestion.text}</h2>
             <p className="text-gray-500 text-sm mb-3">{currentQuestion.context}</p>
 
+            {/* Ask Discogs Button */}
+            <button
+              onClick={analyzeQuestionWithDiscogs}
+              disabled={analyzingQuestion}
+              className="w-full mb-3 p-3 bg-gradient-to-r from-orange-400 to-amber-500 text-white rounded-xl font-bold text-sm active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {analyzingQuestion ? (
+                <>
+                  <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                  Asking Discogs...
+                </>
+              ) : (
+                <>🎵 Ask Discogs</>
+              )}
+            </button>
+
+            {/* Discogs Analysis Results */}
+            {discogsAnalysis && (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <div className="text-sm font-bold text-amber-800 mb-2">Discogs Says:</div>
+
+                {currentQuestion.type.includes('genre') ? (
+                  <div className="space-y-2">
+                    {discogsAnalysis.genreAnalysis?.topGenre && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">Top Genre:</span>
+                        <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded font-medium text-sm">
+                          {discogsAnalysis.genreAnalysis.topGenre}
+                        </span>
+                      </div>
+                    )}
+                    {discogsAnalysis.styleAnalysis?.topStyle && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">Top Style:</span>
+                        <span className="px-2 py-1 bg-violet-100 text-violet-800 rounded font-medium text-sm">
+                          {discogsAnalysis.styleAnalysis.topStyle}
+                        </span>
+                      </div>
+                    )}
+                    {(discogsAnalysis.genreAnalysis?.confidence ?? 0) > 0 && (
+                      <div className="text-xs text-emerald-600 font-medium">
+                        ✓ Matches suggestion with {discogsAnalysis.genreAnalysis?.confidence}% confidence
+                      </div>
+                    )}
+                    {discogsAnalysis.genreAnalysis?.topGenre &&
+                     (discogsAnalysis.genreAnalysis?.confidence ?? 0) === 0 &&
+                     discogsAnalysis.genreAnalysis.topGenre.toLowerCase() !== currentQuestion.suggestedValue.toLowerCase() && (
+                      <div className="text-xs text-amber-600 font-medium">
+                        ⚠️ Discogs suggests &quot;{discogsAnalysis.genreAnalysis.topGenre}&quot; instead
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {discogsAnalysis.decadeAnalysis?.topDecade && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">Top Decade:</span>
+                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded font-medium text-sm">
+                          {discogsAnalysis.decadeAnalysis.topDecade}
+                        </span>
+                      </div>
+                    )}
+                    {(discogsAnalysis.decadeAnalysis?.confidence ?? 0) > 0 && (
+                      <div className="text-xs text-emerald-600 font-medium">
+                        ✓ Matches suggestion with {discogsAnalysis.decadeAnalysis?.confidence}% confidence
+                      </div>
+                    )}
+                    {discogsAnalysis.decadeAnalysis?.topDecade &&
+                     (discogsAnalysis.decadeAnalysis?.confidence ?? 0) === 0 && (
+                      <div className="text-xs text-amber-600 font-medium">
+                        ⚠️ Discogs suggests &quot;{discogsAnalysis.decadeAnalysis.topDecade}&quot; instead
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <details
               className="mb-4 bg-gray-50 rounded-lg"
               onToggle={(e) => {
                 if ((e.target as HTMLDetailsElement).open) {
-                  fetchReleaseYears(affectedProducts);
+                  fetchDiscogsData(affectedProducts);
                 }
               }}
             >
               <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-violet-600">
                 👁️ See {affectedProducts.length} products
-                {loadingYears && <span className="ml-2 text-gray-400">(loading years...)</span>}
+                {loadingDiscogs && <span className="ml-2 text-gray-400">(loading from Discogs...)</span>}
               </summary>
               <div className="px-3 pb-3 max-h-48 overflow-y-auto text-xs">
                 {affectedProducts.map(p => (
-                  <div key={p.handle} className="py-2 border-b border-gray-100 last:border-0 flex justify-between items-center">
-                    <span className="text-black flex-1 mr-2">{p.title}</span>
-                    {releaseYears[p.handle] !== undefined && (
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        releaseYears[p.handle]
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'bg-gray-100 text-gray-400'
-                      }`}>
-                        {releaseYears[p.handle] || '?'}
-                      </span>
+                  <div key={p.handle} className="py-2 border-b border-gray-100 last:border-0">
+                    <div className="flex justify-between items-center">
+                      <span className="text-black flex-1 mr-2">{p.title}</span>
+                      {discogsData[p.handle]?.year && (
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                          {discogsData[p.handle].year}
+                        </span>
+                      )}
+                    </div>
+                    {discogsData[p.handle] && (discogsData[p.handle].genre || discogsData[p.handle].style) && (
+                      <div className="flex gap-1 mt-1">
+                        {discogsData[p.handle].genre && (
+                          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">
+                            {discogsData[p.handle].genre}
+                          </span>
+                        )}
+                        {discogsData[p.handle].style && (
+                          <span className="px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded text-xs">
+                            {discogsData[p.handle].style}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}

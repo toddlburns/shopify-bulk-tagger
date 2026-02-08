@@ -106,6 +106,8 @@ export default function TagQuest() {
   const [editingName, setEditingName] = useState('');
   const [showCheckpoint, setShowCheckpoint] = useState(false);
   const [checkpointNotes, setCheckpointNotes] = useState('');
+  const [releaseYears, setReleaseYears] = useState<Record<string, string | null>>({});
+  const [loadingYears, setLoadingYears] = useState(false);
 
   // Check for saved authentication
   useEffect(() => {
@@ -850,6 +852,28 @@ export default function TagQuest() {
     return vendorData.products.filter(p => !p[tagType]);
   };
 
+  const fetchReleaseYears = async (productsToFetch: Product[]) => {
+    // Filter out products we already have years for
+    const needsFetch = productsToFetch.filter(p => releaseYears[p.handle] === undefined);
+    if (needsFetch.length === 0) return;
+
+    setLoadingYears(true);
+    try {
+      const res = await fetch('/api/deezer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products: needsFetch.slice(0, 20) }) // Limit to 20 at a time
+      });
+      const data = await res.json();
+      if (data.results) {
+        setReleaseYears(prev => ({ ...prev, ...data.results }));
+      }
+    } catch (error) {
+      console.error('Failed to fetch release years:', error);
+    }
+    setLoadingYears(false);
+  };
+
   const getStats = () => {
     let high = 0, medium = 0, low = 0;
 
@@ -1240,14 +1264,31 @@ export default function TagQuest() {
             <h2 className="text-lg font-bold text-black mb-2">{currentQuestion.text}</h2>
             <p className="text-gray-500 text-sm mb-3">{currentQuestion.context}</p>
 
-            <details className="mb-4 bg-gray-50 rounded-lg">
+            <details
+              className="mb-4 bg-gray-50 rounded-lg"
+              onToggle={(e) => {
+                if ((e.target as HTMLDetailsElement).open) {
+                  fetchReleaseYears(affectedProducts);
+                }
+              }}
+            >
               <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-violet-600">
                 👁️ See {affectedProducts.length} products
+                {loadingYears && <span className="ml-2 text-gray-400">(loading years...)</span>}
               </summary>
-              <div className="px-3 pb-3 max-h-32 overflow-y-auto text-xs text-black">
+              <div className="px-3 pb-3 max-h-48 overflow-y-auto text-xs">
                 {affectedProducts.map(p => (
-                  <div key={p.handle} className="py-1 border-b border-gray-100 last:border-0">
-                    {p.title}
+                  <div key={p.handle} className="py-2 border-b border-gray-100 last:border-0 flex justify-between items-center">
+                    <span className="text-black flex-1 mr-2">{p.title}</span>
+                    {releaseYears[p.handle] !== undefined && (
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        releaseYears[p.handle]
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-gray-100 text-gray-400'
+                      }`}>
+                        {releaseYears[p.handle] || '?'}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
